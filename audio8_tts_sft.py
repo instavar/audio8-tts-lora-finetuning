@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Supervised fine-tuning for audio8_tts Preview."""
+"""Supervised fine-tuning for audio8_tts Preview.
+
+Modified by Instavar in 2026 to add PEFT LoRA training and adapter exports.
+See THIRD_PARTY_NOTICES.md for provenance and redistribution notes.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +17,7 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
+from peft import LoraConfig, TaskType, get_peft_model
 from torch.utils.data import Dataset
 from torch.utils.checkpoint import checkpoint
 from transformers import AutoModel, AutoProcessor, HfArgumentParser, Trainer, TrainingArguments
@@ -42,6 +47,11 @@ class ModelArguments:
     max_length: int = field(default=2048)
     freeze_slow_ar: bool = field(default=False)
     freeze_fast_ar: bool = field(default=False)
+    use_lora: bool = field(default=False)
+    lora_r: int = field(default=8)
+    lora_alpha: int = field(default=16)
+    lora_dropout: float = field(default=0.0)
+    lora_target_modules: str = field(default="wqkv,wo,w1,w2,w3")
 
 
 @dataclass
@@ -174,6 +184,14 @@ def actual_model(model: torch.nn.Module) -> torch.nn.Module:
     return model.module if hasattr(model, "module") else model
 
 
+def core_model(model: torch.nn.Module) -> torch.nn.Module:
+    """Return the underlying Audio8 model through wrappers such as PEFT."""
+    model = actual_model(model)
+    if hasattr(model, "get_base_model"):
+        return model.get_base_model()
+    return model
+
+
 def set_trainable_modules(model: torch.nn.Module, *, freeze_slow: bool, freeze_fast: bool) -> None:
     """Freeze complete AR branches while preserving the requested branch."""
     slow_prefixes = ("embeddings.", "codebook_embeddings.", "layers.", "norm.")
@@ -256,7 +274,7 @@ class Audio8TTSTrainer(Trainer):
         del num_items_in_batch
         labels = inputs.pop("labels")
         outputs = model(**inputs, return_dict=True)
-        core = actual_model(model)
+        core = core_model(model)
 
         slow_loss = F.cross_entropy(
             outputs.logits.reshape(-1, outputs.logits.shape[-1]),
@@ -366,11 +384,34 @@ def main() -> None:
             f"limit {model.config.max_seq_len}"
         )
     model.config.use_gradient_checkpointing = bool(training_args.gradient_checkpointing)
-    set_trainable_modules(
-        model,
-        freeze_slow=model_args.freeze_slow_ar,
-        freeze_fast=model_args.freeze_fast_ar,
-    )
+    if model_args.use_lora:
+        if model_args.freeze_slow_ar or model_args.freeze_fast_ar:
+            raise ValueError("LoRA cannot be combined with complete AR branch freezing")
+        target_modules = [
+            value.strip()
+            for value in model_args.lora_target_modules.split(",")
+            if value.strip()
+        ]
+        if not target_modules:
+            raise ValueError("--lora_target_modules must contain at least one module name")
+        model = get_peft_model(
+            model,
+            LoraConfig(
+                r=model_args.lora_r,
+                lora_alpha=model_args.lora_alpha,
+                lora_dropout=model_args.lora_dropout,
+                target_modules=target_modules,
+                bias="none",
+                task_type=TaskType.CAUSAL_LM,
+            ),
+        )
+        model.print_trainable_parameters()
+    else:
+        set_trainable_modules(
+            model,
+            freeze_slow=model_args.freeze_slow_ar,
+            freeze_fast=model_args.freeze_fast_ar,
+        )
 
     train_dataset = Audio8TTSDataset(
         Path(data_args.train_jsonl),
@@ -417,13 +458,19 @@ def main() -> None:
         trainer.save_metrics("eval", metrics)
 
     final_model = actual_model(trainer.model)
-    final_model.gradient_checkpointing_disable()
-    final_model.config.use_gradient_checkpointing = False
-    sanitize_config_for_save(final_model.config)
+    base_model = core_model(final_model)
+    base_model.gradient_checkpointing_disable()
+    base_model.config.use_gradient_checkpointing = False
+    sanitize_config_for_save(base_model.config)
     trainer.save_model(training_args.output_dir)
     processor.save_pretrained(training_args.output_dir)
     if training_args.export_dir:
-        trainer.save_model(training_args.export_dir)
+        if model_args.use_lora:
+            merged_model = final_model.merge_and_unload()
+            sanitize_config_for_save(merged_model.config)
+            merged_model.save_pretrained(training_args.export_dir)
+        else:
+            trainer.save_model(training_args.export_dir)
         processor.save_pretrained(training_args.export_dir)
     LOGGER.info("Saved final checkpoint to %s", training_args.output_dir)
 

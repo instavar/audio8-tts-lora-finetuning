@@ -1,3 +1,118 @@
+# Audio8 TTS LoRA Fine-Tuning
+
+Train small PEFT adapters for Audio8 TTS Preview 0.6B on a single CUDA GPU or
+Apple Silicon Mac, then reload the adapter for speech generation.
+
+This repository is an Instavar-maintained derivative of
+[`Audio8-AI/Audio8_TTS`](https://github.com/Audio8-AI/Audio8_TTS) at commit
+`3346560df718d33096ac2fef7e5c7984ee5248e6`. It preserves the upstream Git
+history and Apache 2.0 notices. Instavar added LoRA training, adapter-aware
+inference, a portable single-device launcher and bounded CUDA and macOS
+reproduction guidance.
+
+The repository does not include model weights, voice recordings, prepared
+datasets or trained adapters. Download the Apache 2.0 Audio8 model separately
+and train only on recordings that you have the right to use.
+
+## What this adds
+
+- rank, alpha, dropout and target-module controls through Hugging Face PEFT;
+- adapter-only checkpoints plus an optional merged export;
+- adapter loading through `audio8_tts_infer.py --adapter`;
+- one direct Python launcher that avoids DeepSpeed and distributed assumptions;
+- CUDA and Apple Silicon smoke configurations;
+- explicit checkpoint generation checks because lower validation loss did not
+  reliably predict normal end-of-speech behavior in our experiment.
+
+## Pinned starting point
+
+| Component | Revision |
+| --- | --- |
+| Upstream code | `3346560df718d33096ac2fef7e5c7984ee5248e6` |
+| Audio8 model | `1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17` |
+| Licence | Apache License 2.0 |
+
+## Quick LoRA run
+
+Install the appropriate dependencies:
+
+```bash
+# CUDA LoRA without DeepSpeed
+pip install -r requirements-lora-cuda.txt
+
+# Apple Silicon
+pip install -r requirements-macos.txt
+```
+
+Prepare the codec targets using the upstream data format, then run:
+
+```bash
+TRAIN_JSONL=prepared_data/train.jsonl \
+EVAL_JSONL=prepared_data/validation.jsonl \
+MAX_STEPS=100 \
+BF16=true \
+bash audio8_tts_lora.sh
+```
+
+For the first 16 GB Mac smoke test, use the smaller bounded configuration:
+
+```bash
+TRAIN_JSONL=prepared_data/train.jsonl \
+MAX_STEPS=1 \
+MAX_LENGTH=256 \
+BATCH_SIZE=1 \
+BF16=false \
+FP16=false \
+bash audio8_tts_lora.sh
+```
+
+The Transformers trainer selects MPS automatically when it is available. MPS
+does not support distributed training, which is why this launcher calls the
+trainer directly.
+
+Reload the saved adapter without merging it:
+
+```bash
+python audio8_tts_infer.py \
+  --model model/audio8_tts_0_6B_preview \
+  --adapter outputs/audio8_tts_lora \
+  --text "A held-out sentence checks whether the adapter still speaks clearly." \
+  --device auto \
+  --greedy \
+  --output outputs/adapter-check.wav
+```
+
+## Promotion gate
+
+A completed training command is not enough to select an adapter. At minimum,
+compare the base model and every candidate checkpoint on held-out prompts for:
+
+1. correct and intelligible words;
+2. normal speech duration;
+3. normal end-of-speech behavior;
+4. voice similarity using a stated proxy;
+5. blind human listening.
+
+In Instavar's first 128-clip pilot, step 100 ended normally on all 16 held-out
+prompts. Several later checkpoints reached a 500-frame generation cap even as
+validation loss continued to improve. That result applies only to the pinned
+experiment, but it is enough to make generation checks mandatory for this
+workflow.
+
+## Rights and attribution
+
+Code and model weights are separate distribution surfaces, even though both
+currently declare Apache 2.0. Dataset and voice rights are separate again.
+Read [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) before redistributing a
+derivative or adapter.
+
+## Upstream documentation
+
+The remaining documentation below is retained from the Audio8 project and
+describes the base model, data format, inference path and full SFT workflow.
+
+---
+
 <div align="center">
 
 <img src="assets/20260729-124515.jpeg" alt="Audio8" width="100%">
@@ -8,7 +123,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-Audio8__TTS-black?style=for-the-badge&logo=github)](https://github.com/Audio8-AI/Audio8_TTS)
 [![Demo](https://img.shields.io/badge/Demo-Audio%20Samples-brightgreen?style=for-the-badge&logo=githubpages)](https://audio8-ai.github.io/Audio8_TTS/)
-[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Audio8--TTS--Preview--0.6b-yellow?style=for-the-badge)](https://huggingface.co/AutoArk-AI/Audio8-TTS-Preview-0.6b)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Audio8--TTS--Preview--0.6b-yellow?style=for-the-badge)](https://huggingface.co/Audio8/Audio8-TTS-Preview-0.6b)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 
 中文文档: [README_zh.md](README_zh.md)
@@ -73,7 +188,7 @@ pip install -r requirements.txt
 ```
 
 Download the checkpoint from
-[Hugging Face](https://huggingface.co/AutoArk-AI/Audio8-TTS-Preview-0.6b) and
+[Hugging Face](https://huggingface.co/Audio8/Audio8-TTS-Preview-0.6b) and
 place it in the repository's `model/` directory. The expected local checkpoint
 path is `model/audio8_tts_0_6B_preview/`. All commands also accept a Hugging
 Face model ID through `--model`.

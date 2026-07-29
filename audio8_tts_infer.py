@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Command-line inference for audio8_tts Preview."""
+"""Command-line inference for audio8_tts Preview.
+
+Modified by Instavar in 2026 to load PEFT adapters and support Apple MPS.
+See THIRD_PARTY_NOTICES.md for provenance and redistribution notes.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +17,7 @@ import numpy as np
 import soundfile as sf
 import torch
 from tqdm import tqdm
+from peft import PeftModel
 from transformers import AutoModel, AutoProcessor
 
 from audio8_tts_data import chunks, clean_text, json_line, read_jsonl, resolve_manifest_path
@@ -47,7 +52,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--failures", type=Path)
     parser.add_argument("--model", default=str(DEFAULT_MODEL))
-    parser.add_argument("--device", default="auto", help="auto, cpu, cuda, or cuda:N")
+    parser.add_argument("--adapter", help="Optional PEFT adapter directory.")
+    parser.add_argument("--device", default="auto", help="auto, cpu, mps, cuda, or cuda:N")
     parser.add_argument(
         "--dtype", choices=("auto", "bfloat16", "float16", "float32"), default="auto"
     )
@@ -66,10 +72,17 @@ def parse_args() -> argparse.Namespace:
 
 def resolve_device(value: str) -> torch.device:
     if value == "auto":
-        value = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            value = "cuda"
+        elif torch.backends.mps.is_available():
+            value = "mps"
+        else:
+            value = "cpu"
     device = torch.device(value)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is not available")
+    if device.type == "mps" and not torch.backends.mps.is_available():
+        raise RuntimeError("MPS was requested but is not available")
     return device
 
 
@@ -221,9 +234,10 @@ def main() -> None:
         return
 
     processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True)
-    model = AutoModel.from_pretrained(
-        args.model, trust_remote_code=True, dtype=dtype
-    ).eval().to(device)
+    model = AutoModel.from_pretrained(args.model, trust_remote_code=True, dtype=dtype)
+    if args.adapter:
+        model = PeftModel.from_pretrained(model, args.adapter)
+    model = model.eval().to(device)
     sample_rate = int(model.config.codec_sample_rate)
     generator = torch.Generator(device=device).manual_seed(args.seed)
 

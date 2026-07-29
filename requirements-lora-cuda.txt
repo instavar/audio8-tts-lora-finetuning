@@ -1,0 +1,6 @@
+-r requirements.txt
+torch==2.6.0
+torchaudio==2.6.0
+accelerate>=1.10,<2
+peft>=0.17,<1
+tensorboard>=2.16
