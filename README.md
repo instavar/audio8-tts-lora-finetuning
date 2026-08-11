@@ -99,6 +99,12 @@ validation loss continued to improve. That result applies only to the pinned
 experiment, but it is enough to make generation checks mandatory for this
 workflow.
 
+The [2026-08-12 CUDA runtime report](reports/runtime-smoke-2026-08-12.md)
+records a frozen-prompt base-model smoke with output and model hashes, WER,
+cold-start time, and peak GPU memory. No Audio8 adapter was available on that
+host, so the report deliberately does not promote CUDA adapter support beyond
+the existing bounded training evidence.
+
 ## Rights and attribution
 
 Code and model weights are separate distribution surfaces, even though both
