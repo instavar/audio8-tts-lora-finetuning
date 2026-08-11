@@ -363,3 +363,7 @@ Code and model weights in this repository are released under the
 
 We thank the Fish Audio team for publishing the DualAR architecture used in
 Fish S2 Pro.
+
+## Instavar Voice conformance
+
+[`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) distinguishes the validated PyTorch adapter paths from upstream ONNX and SGLang surfaces whose adapter-aware exports remain unverified. It also records the frozen objective and blinded-listening gates required before promotion. CI validates the manifest against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation).
