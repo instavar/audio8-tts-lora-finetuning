@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "audio8-female01-lora-mps-cuda-20260729",
+  "repository": "instavar/audio8-tts-lora-finetuning",
+  "model_family": "Audio8 TTS Preview",
+  "adaptation_mode": "lora",
+  "evidence_revision": "384b51b6ab501899c118895da16b1489ffc3e88e",
+  "observed_date": "2026-07-29",
+  "source_refs": [
+    "reports/macos-mps-smoke-test.md",
+    "reports/cuda-fresh-clone-reproduction.md",
+    "README.md#bounded-evidence"
+  ],
+  "stage_evidence": {
+    "preflight": {
+      "status": "validated",
+      "evidence_refs": ["reports/macos-mps-smoke-test.md", "reports/cuda-fresh-clone-reproduction.md"],
+      "boundary": "Bounded MPS and fresh-clone CUDA training paths passed, but neither establishes long-run stability."
+    },
+    "training": {
+      "status": "validated",
+      "evidence_refs": ["reports/macos-mps-smoke-test.md", "reports/cuda-fresh-clone-reproduction.md"],
+      "boundary": "Adapter training, saving, and merge behavior passed on bounded MPS and CUDA runs."
+    },
+    "inference": {
+      "status": "validated",
+      "evidence_refs": ["reports/macos-mps-smoke-test.md"],
+      "boundary": "Fresh-process MPS reload produced a finite held-out WAV; CUDA held-out generation remained incomplete."
+    },
+    "evaluation": {
+      "status": "observed",
+      "evidence_refs": ["README.md#bounded-evidence"],
+      "boundary": "Checkpoint behavior was inspected, but no frozen objective and blind-listening report was preserved."
+    },
+    "packaging": {
+      "status": "observed",
+      "evidence_refs": ["reports/cuda-fresh-clone-reproduction.md"],
+      "boundary": "Adapter save and merge were exercised, but no immutable promoted package was recorded."
+    }
+  },
+  "contract_migration": {
+    "experiment_manifest": "blocked",
+    "artifact_package": "blocked",
+    "blockers": [
+      "The historical private corpus split hashes are not recorded in this public repository.",
+      "The selected adapter hash and complete frozen evaluation report are not recorded."
+    ]
+  }
+}
