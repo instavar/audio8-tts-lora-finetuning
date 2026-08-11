@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON="${PYTHON:-python}"
+PYTHON="${PYTHON:-python3}"
 MODEL="${MODEL:-${PROJECT_ROOT}/model/audio8_tts_0_6B_preview}"
 TRAIN_JSONL="${TRAIN_JSONL:-}"
 EVAL_JSONL="${EVAL_JSONL:-}"

@@ -1,0 +1,128 @@
+{
+  "schema_version": "1.0.0",
+  "repository": {
+    "slug": "instavar/audio8-tts-lora-finetuning",
+    "url": "https://github.com/instavar/audio8-tts-lora-finetuning",
+    "evidence_revision": "384b51b6ab501899c118895da16b1489ffc3e88e"
+  },
+  "model": {
+    "family": "Audio8 TTS",
+    "upstream_repository": "Audio8-AI/Audio8_TTS"
+  },
+  "adaptation": {
+    "lora": {
+      "status": "supported",
+      "evidence": [
+        {
+          "level": "validated",
+          "ref": "README.md#what-this-adds",
+          "claim": "The companion records adapter-only training, save, fresh-process reload, and held-out generation on CUDA and Apple Silicon."
+        }
+      ]
+    },
+    "full_sft": {
+      "status": "upstream_only",
+      "evidence": [
+        {
+          "level": "repository_declared",
+          "ref": "README.md#supervised-fine-tuning",
+          "claim": "The inherited upstream repository documents a full-SFT path separately from the Instavar LoRA addition."
+        }
+      ]
+    }
+  },
+  "runtimes": [
+    {
+      "id": "pytorch_cuda",
+      "status": "supported",
+      "artifact_mode": "adapter",
+      "streaming": false,
+      "evidence": [
+        {
+          "level": "validated",
+          "ref": "README.md#quick-lora-run",
+          "claim": "The LoRA runner and inference path were exercised on the recorded CUDA host."
+        }
+      ]
+    },
+    {
+      "id": "pytorch_mps",
+      "status": "supported",
+      "artifact_mode": "adapter",
+      "streaming": false,
+      "evidence": [
+        {
+          "level": "smoke_tested",
+          "ref": "reports/macos-mps-smoke-test.md",
+          "claim": "A bounded MPS LoRA step saved, reloaded, and generated a finite held-out WAV."
+        }
+      ]
+    },
+    {
+      "id": "onnx_cpu",
+      "status": "unverified_for_adapter",
+      "artifact_mode": "merged",
+      "streaming": false,
+      "evidence": [
+        {
+          "level": "repository_declared",
+          "ref": "README.md#upstream-documentation",
+          "claim": "The upstream lineage exposes ONNX CPU inference, but adapter-aware export is not established here."
+        }
+      ]
+    },
+    {
+      "id": "sglang",
+      "status": "unverified_for_adapter",
+      "artifact_mode": "merged",
+      "streaming": true,
+      "evidence": [
+        {
+          "level": "repository_declared",
+          "ref": "README.md#upstream-documentation",
+          "claim": "The upstream lineage exposes SGLang serving, but adapter-aware export is not established here."
+        }
+      ]
+    }
+  ],
+  "evaluation": {
+    "prompt_pack": {
+      "id": "instavar-singapore-english",
+      "version": "1.0.0",
+      "sha256": "79491bec271c0aa1ea1b7dd92dd976476959f1607859a67451652f7c12e56a45"
+    },
+    "objective_metrics": [
+      "asr_word_error_rate",
+      "speaker_embedding_similarity",
+      "invalid_output_rate",
+      "duration_seconds",
+      "sample_rate_hz",
+      "silence_fraction",
+      "clipping_fraction",
+      "real_time_factor",
+      "peak_memory_bytes"
+    ],
+    "listening_criteria": [
+      "speaker_identity",
+      "singapore_english_accent_fidelity",
+      "lexical_pronunciation",
+      "cadence_variation",
+      "long_form_monotony",
+      "naturalness",
+      "emotion_and_instruction_obedience",
+      "artifact_severity",
+      "listening_fatigue"
+    ]
+  },
+  "rights": {
+    "code": "The repository declares Apache-2.0 for its code and bundled model lineage; pin and review every distributed artifact.",
+    "weights": "Pin and review the upstream model-weight terms separately from this repository's code license.",
+    "dataset": "Record dataset provenance, permitted use, and speaker consent before training.",
+    "generated_output": "Review the model and dataset terms for the intended generated-output use."
+  },
+  "known_gaps": [
+    "A one-step MPS preflight does not establish training quality or long-session stability.",
+    "Adapter-aware ONNX and SGLang exports have not passed conformance.",
+    "No selected adapter has passed blinded long-form Singapore English listening."
+  ]
+}

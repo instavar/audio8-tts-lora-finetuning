@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON="${PYTHON:-python}"
+PYTHON="${PYTHON:-python3}"
 MODEL="${MODEL:-${PROJECT_ROOT}/model/audio8_tts_0_6B_preview}"
 TRAIN_JSONL="${TRAIN_JSONL:-}"
 EVAL_JSONL="${EVAL_JSONL:-}"
@@ -12,6 +12,22 @@ EXPORT_DIR="${EXPORT_DIR:-${OUTPUT_DIR}/merged}"
 if [[ -z "${TRAIN_JSONL}" ]]; then
   echo "TRAIN_JSONL is required." >&2
   exit 2
+fi
+
+if [[ "${AUDIT_CORPUS:-0}" == "1" ]]; then
+  : "${RAW_TRAIN_JSONL:?set RAW_TRAIN_JSONL when AUDIT_CORPUS=1}"
+  : "${RAW_VALIDATION_JSONL:?set RAW_VALIDATION_JSONL when AUDIT_CORPUS=1}"
+  : "${RAW_TEST_JSONL:?set RAW_TEST_JSONL when AUDIT_CORPUS=1}"
+  : "${INSTAVAR_VOICE_EVAL_DIR:?set INSTAVAR_VOICE_EVAL_DIR to the pinned instavar-voice-evaluation checkout}"
+  audit_args=(
+    --split "train=${RAW_TRAIN_JSONL}"
+    --split "validation=${RAW_VALIDATION_JSONL}"
+    --split "test=${RAW_TEST_JSONL}"
+  )
+  if [[ -n "${CORPUS_GROUP_FIELD:-}" ]]; then
+    audit_args+=(--group-field "${CORPUS_GROUP_FIELD}")
+  fi
+  "${PYTHON}" "${INSTAVAR_VOICE_EVAL_DIR}/main.py" audit-corpus "${audit_args[@]}"
 fi
 
 data_args=(--train_jsonl "${TRAIN_JSONL}")
