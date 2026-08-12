@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -13,10 +14,16 @@ from pathlib import Path
 import soundfile as sf
 
 
+IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--generation-plan", type=Path, required=True)
     parser.add_argument("--candidate-id", required=True)
+    parser.add_argument("--runtime-id")
+    parser.add_argument("--artifact-set-id")
+    parser.add_argument("--artifact-set-sha256")
     parser.add_argument("--model", required=True)
     parser.add_argument("--adapter", required=True)
     parser.add_argument("--reference-audio")
@@ -45,8 +52,33 @@ def read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def runtime_artifact_fields(args: argparse.Namespace) -> dict[str, str]:
+    device_family = args.device.split(":", 1)[0].lower()
+    runtime_id = args.runtime_id or {"cuda": "pytorch_cuda", "mps": "pytorch_mps"}.get(device_family)
+    if not runtime_id:
+        raise ValueError("runtime id is required for devices outside declared CUDA and MPS runtimes")
+    if not IDENTIFIER_RE.fullmatch(runtime_id):
+        raise ValueError("runtime id must be a lowercase machine-readable identifier")
+    if bool(args.artifact_set_id) != bool(args.artifact_set_sha256):
+        raise ValueError("artifact set id and sha256 must be provided together")
+    fields = {"runtime_id": runtime_id}
+    if args.artifact_set_id:
+        if not IDENTIFIER_RE.fullmatch(args.artifact_set_id):
+            raise ValueError("artifact set id must be a lowercase machine-readable identifier")
+        if not re.fullmatch(r"[0-9a-f]{64}", args.artifact_set_sha256):
+            raise ValueError("artifact set sha256 must be a lowercase SHA-256 digest")
+        fields.update(
+            {
+                "artifact_set_id": args.artifact_set_id,
+                "artifact_set_sha256": args.artifact_set_sha256,
+            }
+        )
+    return fields
+
+
 def main() -> int:
     args = parse_args()
+    artifact_fields = runtime_artifact_fields(args)
     plan = json.loads(args.generation_plan.read_text(encoding="utf-8"))
     rows = [row for row in plan.get("samples", []) if row.get("candidate_id") == args.candidate_id]
     if not rows:
@@ -119,6 +151,7 @@ def main() -> int:
             "requested_text": row["text"],
             "valid": False,
             "runtime": "audio8_pytorch_adapter",
+            **artifact_fields,
             "instruction_applied": False,
         }
         if record and record.get("status") in {"OK", "NO_EOS"}:

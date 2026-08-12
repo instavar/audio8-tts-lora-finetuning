@@ -43,6 +43,9 @@ class LoRAContractTests(unittest.TestCase):
         source = (ROOT / "scripts" / "run_evaluation_suite.py").read_text(encoding="utf-8")
         self.assertIn('record["status"] == "OK"', source)
         self.assertIn("generation-observations.json", source)
+        self.assertIn("artifact set id and sha256 must be provided together", source)
+        self.assertIn('"runtime_id": runtime_id', source)
+        self.assertIn('"artifact_set_sha256": args.artifact_set_sha256', source)
 
 
 if __name__ == "__main__":

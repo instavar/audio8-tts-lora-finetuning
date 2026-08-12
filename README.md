@@ -91,8 +91,8 @@ splits, writes training outputs under the unique lifecycle work directory,
 selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
 
-Validate the recipe with evaluator merge
-`e689ee121ee4a6ae07793ef1c49d70c48b0ad271`. Use an empty work directory
+Validate the recipe with evaluator revision
+`a85677df59c416675048967f64f4f97dd6b530cd`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
@@ -112,6 +112,7 @@ python scripts/run_evaluation_suite.py \
   --model /path/to/audio8_tts_0_6B_preview \
   --adapter /path/to/adapter \
   --output-dir evaluation/audio8-adapter \
+  --runtime-id pytorch_cuda \
   --device cuda
 ```
 
@@ -119,6 +120,12 @@ Batch rows carry explicit seeds and are grouped by reference-conditioning mode
 and seed before generation. `NO_EOS` remains an invalid observation even when
 a WAV was written. The runner therefore cannot improve its apparent completion
 rate by dropping capped generations.
+
+For an exact CUDA-versus-MPS experiment, also pass `--artifact-set-id` and
+`--artifact-set-sha256` together. The runner infers `pytorch_cuda` or
+`pytorch_mps` from the device when `--runtime-id` is omitted and rejects partial
+or malformed artifact bindings. ONNX or SGLang exports remain `derived`, not
+exact.
 
 A completed training command is not enough to select an adapter. At minimum,
 compare the base model and every candidate checkpoint on held-out prompts for:
