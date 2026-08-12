@@ -1,6 +1,8 @@
 # Instavar Voice conformance
 
-This repository declares its model-specific adaptation and runtime surface in `instavar-voice-capabilities.json`. The manifest uses the public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation) pinned by CI to merge commit `56b32c954e950fe915d4c6595c0630985576a9b7`.
+This repository declares its model-specific adaptation and runtime surface in `instavar-voice-capabilities.json`. The manifest and executable [`instavar-voice-backend.json`](instavar-voice-backend.json) LoRA recipe use the public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation) pinned by CI to merge commit `d63ab559a8e0592bd373f9b51421040b540fb2b7`.
+
+The executable recipe requires an explicit CUDA or MPS device and compatible dtype. It audits raw grouped splits, isolates trainer output, selects one exact checkpoint child, reloads it in a fresh process, runs the frozen evaluation plan, and packages the adapter with source and evaluation evidence. One passed runtime does not establish equivalence with the other runtime.
 
 Capability schema 1.2 separates validated CUDA training from bounded MPS reload and inference evidence. It records the missing selected adapter as an artifact-retention blocker rather than a model failure.
 
