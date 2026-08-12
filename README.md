@@ -92,7 +92,7 @@ selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
 
 Validate the recipe with evaluator revision
-`1a413952ae3f43aeda88fde5109e724771c12b0c`. Use an empty work directory
+`2088146501081138b87e8e398eda610a392c0d4d`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
@@ -419,7 +419,7 @@ Fish S2 Pro.
 
 The lifecycle fixes evaluation batch size at one so timing belongs to one
 sample, preserves invalid generations as explicit rows, and uses evaluator
-revision `1a413952ae3f43aeda88fde5109e724771c12b0c` to bind timing, duration,
+revision `2088146501081138b87e8e398eda610a392c0d4d` to bind timing, duration,
 and peak-memory fields to the frozen plan and live output audio. CUDA peak
 allocation is measured by PyTorch. MPS timing explicitly synchronizes the
 device, but non-CUDA paths omit peak memory because this runner has no equivalent
@@ -448,6 +448,10 @@ and candidate identity. Reviewers no longer need an uncontrolled prompt file.
 Version 0.25 binds each listening criterion to a reviewer question, low and
 high scale anchors, and an explicit score direction. Harm criteria remain raw
 and separate instead of being silently inverted or folded into a composite.
+Version 0.26 adds deterministic per-rater presentation schedules that
+counterbalance candidate precedence within each prompt and seed. Aggregation
+recomputes the private audit, requires the scheduled pseudonymous rater set,
+and keeps order, fatigue, carryover, and reviewer-compliance limits explicit.
 This companion bundles neither model
 weights nor optional extractor dependencies and runs neither learned metric
 automatically. Run them explicitly after generation with trusted, content-addressed
