@@ -38,15 +38,32 @@ class LoRAContractTests(unittest.TestCase):
         self.assertIn("seed: int = 42", source)
         self.assertIn("a generation batch must use one frozen seed", source)
         self.assertIn("(item.reference_audio is not None, item.seed)", source)
+        self.assertIn('"generation_seconds": elapsed', source)
+        self.assertIn('"peak_memory_bytes": peak_memory_bytes', source)
+        self.assertIn("torch.mps.synchronize()", source)
+
+    def test_attempt_bound_suite_rejects_ambiguous_batch_timing(self) -> None:
+        source = (ROOT / "scripts" / "run_evaluation_suite.py").read_text(encoding="utf-8")
+        self.assertIn("attempt-bound evaluation requires --batch-size 1", source)
+        self.assertNotIn('"peak_memory_bytes": record["peak_memory_bytes"],', source)
 
     def test_evaluation_suite_preserves_no_eos_as_invalid(self) -> None:
         source = (ROOT / "scripts" / "run_evaluation_suite.py").read_text(encoding="utf-8")
         self.assertIn('record["status"] == "OK"', source)
         self.assertIn("generation-observations.json", source)
+        self.assertIn("allow-invalid-output", source)
+        self.assertIn('not in {"1.0.0", "1.1.0"}', source)
+        self.assertIn("generation_seconds", source)
         self.assertIn("artifact set id and sha256 must be provided together", source)
         self.assertIn('"runtime_id": runtime_id', source)
         self.assertIn('"artifact_set_sha256": args.artifact_set_sha256', source)
         self.assertIn('"observation_schema_version": "1.0.0"', source)
+
+    def test_lifecycle_binds_runtime_attempt_evidence(self) -> None:
+        source = (ROOT / "scripts" / "instavar_voice_lifecycle.py").read_text(encoding="utf-8")
+        self.assertIn("build-generation-attempt-receipt", source)
+        self.assertIn("apply-generation-attempt-receipt", source)
+        self.assertIn("objective-observations.json", source)
 
 
 if __name__ == "__main__":

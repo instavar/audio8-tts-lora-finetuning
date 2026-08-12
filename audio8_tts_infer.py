@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import random
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,12 +17,18 @@ from typing import Any
 import numpy as np
 import soundfile as sf
 import torch
-from tqdm import tqdm
 from peft import PeftModel
+from tqdm import tqdm
 from transformers import AutoModel, AutoProcessor
 
-from audio8_tts_data import chunks, clean_text, json_line, read_jsonl, resolve_manifest_path
-from audio8_tts_data import validate_sample_id
+from audio8_tts_data import (
+    chunks,
+    clean_text,
+    json_line,
+    read_jsonl,
+    resolve_manifest_path,
+    validate_sample_id,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -36,6 +43,13 @@ class InferenceItem:
     reference_audio: Path | None = None
     reference_text: str | None = None
     seed: int = 42
+
+
+def synchronize_device(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    elif device.type == "mps":
+        torch.mps.synchronize()
 
 
 def parse_args() -> argparse.Namespace:
@@ -285,6 +299,10 @@ def main() -> None:
         }
 
     def run_batch(batch: list[InferenceItem]) -> list[dict[str, Any]]:
+        if device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats(device)
+        synchronize_device(device)
+        started = time.perf_counter()
         result = synthesize(batch, args.max_new_tokens)
         output = result["output"]
         records: list[dict[str, Any]] = []
@@ -322,6 +340,19 @@ def main() -> None:
                     "sample_rate": sample_rate,
                 }
             )
+        synchronize_device(device)
+        elapsed = time.perf_counter() - started
+        peak_memory_bytes = (
+            int(torch.cuda.max_memory_allocated(device)) if device.type == "cuda" else 0
+        )
+        for record in records:
+            record.update(
+                {
+                    "generation_seconds": elapsed,
+                    "generation_batch_size": len(batch),
+                    **({"peak_memory_bytes": peak_memory_bytes} if device.type == "cuda" else {}),
+                }
+            )
         return records
 
     records = [
@@ -334,7 +365,7 @@ def main() -> None:
         }
         for item in skipped
     ]
-    failures: list[dict[str, str]] = []
+    failures: list[dict[str, Any]] = []
     # The processor treats reference conditioning as a batch-wide mode, so the
     # two groups must not be mixed in one call.
     group_keys = sorted({(item.reference_audio is not None, item.seed) for item in pending})
@@ -347,9 +378,17 @@ def main() -> None:
     for group in groups:
         for batch_values in chunks(group, args.batch_size):
             batch = list(batch_values)
+            batch_started = time.perf_counter()
             try:
                 records.extend(run_batch(batch))
             except Exception as batch_exc:
+                synchronize_device(device)
+                initial_failure_seconds = time.perf_counter() - batch_started
+                initial_peak_memory_bytes = (
+                    int(torch.cuda.max_memory_allocated(device))
+                    if device.type == "cuda"
+                    else None
+                )
                 print(
                     f"[audio8_tts] batch fallback after {type(batch_exc).__name__}: {batch_exc}",
                     flush=True,
@@ -357,14 +396,37 @@ def main() -> None:
                 if device.type == "cuda":
                     torch.cuda.empty_cache()
                 for item in batch:
+                    item_started = time.perf_counter()
                     try:
-                        records.extend(run_batch([item]))
+                        item_records = run_batch([item])
+                        if len(batch) == 1:
+                            for record in item_records:
+                                record["generation_seconds"] += initial_failure_seconds
+                                if initial_peak_memory_bytes is not None:
+                                    record["peak_memory_bytes"] = max(
+                                        record["peak_memory_bytes"], initial_peak_memory_bytes
+                                    )
+                        records.extend(item_records)
                     except Exception as exc:
                         failures.append(
                             {
                                 "id": item.sample_id,
                                 "error_type": type(exc).__name__,
                                 "error": str(exc),
+                                "generation_seconds": (
+                                    time.perf_counter() - item_started
+                                    + (initial_failure_seconds if len(batch) == 1 else 0)
+                                ),
+                                **(
+                                    {
+                                        "peak_memory_bytes": max(
+                                            initial_peak_memory_bytes if len(batch) == 1 else 0,
+                                            int(torch.cuda.max_memory_allocated(device)),
+                                        )
+                                    }
+                                    if device.type == "cuda"
+                                    else {}
+                                ),
                             }
                         )
                         print(

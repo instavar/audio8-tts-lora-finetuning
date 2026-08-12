@@ -92,7 +92,7 @@ selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
 
 Validate the recipe with evaluator revision
-`7a88f11114dca3d23ffe99892b55ac6c7b3c7490`. Use an empty work directory
+`d995f199c8acc3ccfefbabcd9a95af2d83899548`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
@@ -416,3 +416,14 @@ Fish S2 Pro.
 ## Instavar Voice conformance
 
 [`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) distinguishes the validated PyTorch adapter paths from upstream ONNX and SGLang surfaces whose adapter-aware exports remain unverified. It also records the frozen objective and blinded-listening gates required before promotion. CI validates the manifest against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation).
+
+The lifecycle fixes evaluation batch size at one so timing belongs to one
+sample, preserves invalid generations as explicit rows, and uses evaluator
+revision `d995f199c8acc3ccfefbabcd9a95af2d83899548` to bind timing, duration,
+and peak-memory fields to the frozen plan and live output audio. CUDA peak
+allocation is measured by PyTorch. MPS timing explicitly synchronizes the
+device, but non-CUDA paths omit peak memory because this runner has no equivalent
+peak-allocation probe. A version 1.1 plan requiring peak memory therefore fails
+closed instead of accepting a synthetic zero. Use the packaged
+`objective-observations.json`, not the raw generation file, for a version 1.1
+runtime comparison.

@@ -35,6 +35,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--retry-max-new-tokens", type=int, default=2000)
     parser.add_argument("--greedy", action="store_true")
+    parser.add_argument(
+        "--allow-invalid-output",
+        action="store_true",
+        help="return success after recording every planned attempt even when an output is invalid",
+    )
     return parser.parse_args()
 
 
@@ -80,11 +85,17 @@ def main() -> int:
     args = parse_args()
     artifact_fields = runtime_artifact_fields(args)
     plan = json.loads(args.generation_plan.read_text(encoding="utf-8"))
+    if plan.get("schema_version") not in {"1.0.0", "1.1.0"}:
+        raise ValueError("generation plan schema_version must equal 1.0.0 or 1.1.0")
     rows = [row for row in plan.get("samples", []) if row.get("candidate_id") == args.candidate_id]
     if not rows:
         raise ValueError(f"generation plan has no rows for candidate {args.candidate_id!r}")
     if bool(args.reference_audio) != bool(args.reference_text):
         raise ValueError("reference audio and text must be provided together")
+    if args.batch_size != 1:
+        raise ValueError(
+            "attempt-bound evaluation requires --batch-size 1 for per-sample runtime metrics"
+        )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     batch_manifest = args.output_dir / "audio8-input.jsonl"
@@ -163,20 +174,38 @@ def main() -> int:
                     "valid": record["status"] == "OK" and info.frames > 0,
                     "audio_path": str(audio),
                     "audio_sha256": sha256(audio),
-                    "audio_duration_seconds": float(info.duration),
+                    **(
+                        {"audio_duration_seconds": float(info.duration)}
+                        if info.duration > 0
+                        else {}
+                    ),
+                    "generation_seconds": record["generation_seconds"],
+                    **(
+                        {"peak_memory_bytes": record["peak_memory_bytes"]}
+                        if "peak_memory_bytes" in record
+                        else {}
+                    ),
                     "generation_status": record["status"],
                 }
             )
         if failure:
             observation.update(failure)
         if row.get("instruction"):
-            observation["instruction_note"] = "Audio8 has no separate instruction input in this path."
+            observation["instruction_note"] = (
+                "Audio8 has no separate instruction input in this path."
+            )
         observations.append(observation)
     (args.output_dir / "generation-observations.json").write_text(
         json.dumps(observations, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    return 0 if completed.returncode == 0 and all(row["valid"] for row in observations) else 1
+    complete_attempts = all("generation_seconds" in row for row in observations)
+    if args.allow_invalid_output:
+        return 0 if complete_attempts else 1
+    complete_and_valid = completed.returncode == 0 and complete_attempts and all(
+        row["valid"] for row in observations
+    )
+    return 0 if complete_and_valid else 1
 
 
 if __name__ == "__main__":
