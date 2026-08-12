@@ -35,6 +35,7 @@ class InferenceItem:
     output: Path
     reference_audio: Path | None = None
     reference_text: str | None = None
+    seed: int = 42
 
 
 def parse_args() -> argparse.Namespace:
@@ -138,6 +139,9 @@ def load_batch_items(manifest: Path, output_dir: Path) -> list[InferenceItem]:
                 if reference_text_value
                 else None
             )
+            seed = row.get("seed", 42)
+            if not isinstance(seed, int) or isinstance(seed, bool) or seed < 0:
+                raise ValueError("seed must be a non-negative integer")
         except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
             raise ValueError(f"{manifest}:{line_number}: invalid inference row: {exc}") from exc
         if sample_id in seen:
@@ -150,6 +154,7 @@ def load_batch_items(manifest: Path, output_dir: Path) -> list[InferenceItem]:
                 output=output_dir / f"{sample_id}.wav",
                 reference_audio=reference_audio,
                 reference_text=reference_text,
+                seed=seed,
             )
         )
     if not items:
@@ -174,6 +179,7 @@ def load_items(args: argparse.Namespace) -> list[InferenceItem]:
                 if args.reference_text
                 else None
             ),
+            seed=args.seed,
         )
     ]
 
@@ -239,9 +245,17 @@ def main() -> None:
         model = PeftModel.from_pretrained(model, args.adapter)
     model = model.eval().to(device)
     sample_rate = int(model.config.codec_sample_rate)
-    generator = torch.Generator(device=device).manual_seed(args.seed)
-
     def synthesize(batch: list[InferenceItem], max_new_tokens: int) -> dict[str, Any]:
+        seeds = {item.seed for item in batch}
+        if len(seeds) != 1:
+            raise ValueError("a generation batch must use one frozen seed")
+        seed = next(iter(seeds))
+        random.seed(seed)
+        np.random.seed(seed % (2**32))
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        generator = torch.Generator(device=device).manual_seed(seed)
         processor_kwargs: dict[str, Any] = {
             "text": [item.text for item in batch],
             "return_tensors": "pt",
@@ -302,6 +316,7 @@ def main() -> None:
                     "reference_audio": (
                         str(item.reference_audio) if item.reference_audio is not None else None
                     ),
+                    "seed": item.seed,
                     "code_frames": int(codes_array.shape[1]),
                     "waveform_samples": int(waveform_array.shape[0]),
                     "sample_rate": sample_rate,
@@ -315,15 +330,17 @@ def main() -> None:
             "status": "SKIP",
             "output_audio": str(item.output),
             "reference_audio": str(item.reference_audio) if item.reference_audio else None,
+            "seed": item.seed,
         }
         for item in skipped
     ]
     failures: list[dict[str, str]] = []
     # The processor treats reference conditioning as a batch-wide mode, so the
     # two groups must not be mixed in one call.
+    group_keys = sorted({(item.reference_audio is not None, item.seed) for item in pending})
     groups = [
-        [item for item in pending if item.reference_audio is None],
-        [item for item in pending if item.reference_audio is not None],
+        [item for item in pending if (item.reference_audio is not None, item.seed) == key]
+        for key in group_keys
     ]
     total_batches = sum((len(group) + args.batch_size - 1) // args.batch_size for group in groups)
     progress = tqdm(total=total_batches, desc="audio8_tts")

@@ -84,6 +84,26 @@ python audio8_tts_infer.py \
 
 ## Promotion gate
 
+### Frozen multi-prompt adapter evaluation
+
+Build an Instavar Voice generation plan, then run every Audio8 row through one
+loaded base model and adapter:
+
+```bash
+python scripts/run_evaluation_suite.py \
+  --generation-plan evaluation/generation-plan.json \
+  --candidate-id audio8-adapter \
+  --model /path/to/audio8_tts_0_6B_preview \
+  --adapter /path/to/adapter \
+  --output-dir evaluation/audio8-adapter \
+  --device cuda
+```
+
+Batch rows carry explicit seeds and are grouped by reference-conditioning mode
+and seed before generation. `NO_EOS` remains an invalid observation even when
+a WAV was written. The runner therefore cannot improve its apparent completion
+rate by dropping capped generations.
+
 A completed training command is not enough to select an adapter. At minimum,
 compare the base model and every candidate checkpoint on held-out prompts for:
 

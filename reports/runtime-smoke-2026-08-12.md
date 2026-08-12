@@ -19,3 +19,13 @@ The test used prompt `neutral-brief` from `instavar-singapore-english` version 1
 The ASR word error rate was 0.0 and the output was a valid mono PCM WAV with no clipped samples. This is one short prompt and one seed. It establishes bounded execution and intelligibility under the named extractor. It does not establish speaker identity, Singapore English accent fidelity, cadence, naturalness, listening fatigue, warm throughput, or long-session stability. Cold-start real-time factor includes model loading.
 
 The dirty checkout and absence of a CUDA adapter are load-bearing boundaries. The existing MPS adapter evidence remains separate.
+
+## Frozen suite follow-up
+
+The repository now converts the common generation plan into Audio8's one-load
+batch manifest, forwards an explicit seed for each item, and records `NO_EOS`
+as an invalid observation. The adapted CUDA suite was not run because bounded
+searches found neither the previously trained adapter nor a prepared training
+manifest on the CUDA host or Mac. Replacing that missing artifact with the base
+model would answer a different question, so the matrix retains a blocked Audio8
+adapter row instead.

@@ -33,6 +33,17 @@ class LoRAContractTests(unittest.TestCase):
         self.assertNotIn("--deepspeed", source)
         self.assertIn("--use_lora true", source)
 
+    def test_batch_inference_groups_frozen_seeds(self) -> None:
+        source = (ROOT / "audio8_tts_infer.py").read_text(encoding="utf-8")
+        self.assertIn("seed: int = 42", source)
+        self.assertIn("a generation batch must use one frozen seed", source)
+        self.assertIn("(item.reference_audio is not None, item.seed)", source)
+
+    def test_evaluation_suite_preserves_no_eos_as_invalid(self) -> None:
+        source = (ROOT / "scripts" / "run_evaluation_suite.py").read_text(encoding="utf-8")
+        self.assertIn('record["status"] == "OK"', source)
+        self.assertIn("generation-observations.json", source)
+
 
 if __name__ == "__main__":
     unittest.main()
