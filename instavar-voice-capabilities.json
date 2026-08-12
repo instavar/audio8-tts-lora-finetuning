@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "repository": {
     "slug": "instavar/audio8-tts-lora-finetuning",
     "url": "https://github.com/instavar/audio8-tts-lora-finetuning",
@@ -18,7 +18,73 @@
           "ref": "README.md#what-this-adds",
           "claim": "The companion records adapter-only training, save, fresh-process reload, and held-out generation on CUDA and Apple Silicon."
         }
-      ]
+      ],
+      "lifecycle": {
+        "corpus_audit": {
+          "status": "not_recorded",
+          "evidence": [],
+          "boundary": "The private historical corpus does not preserve public grouped split hashes."
+        },
+        "training": {
+          "status": "validated",
+          "evidence": [
+            {
+              "level": "validated",
+              "ref": "reports/cuda-fresh-clone-reproduction.md",
+              "claim": "Fresh-clone CUDA adapter training completed on a bounded run."
+            },
+            {
+              "level": "smoke_tested",
+              "ref": "reports/macos-mps-smoke-test.md",
+              "claim": "A bounded MPS adapter step completed."
+            }
+          ],
+          "boundary": "Bounded runs do not establish convergence or long-session stability."
+        },
+        "checkpoint_save": {
+          "status": "validated",
+          "evidence": [
+            {
+              "level": "validated",
+              "ref": "reports/cuda-fresh-clone-reproduction.md",
+              "claim": "The CUDA run saved adapter state and exercised merge behavior."
+            }
+          ],
+          "boundary": "No selected immutable adapter artifact is retained for the current CUDA suite."
+        },
+        "fresh_process_reload": {
+          "status": "smoke_tested",
+          "evidence": [
+            {
+              "level": "smoke_tested",
+              "ref": "reports/macos-mps-smoke-test.md",
+              "claim": "A fresh process reloaded the bounded MPS adapter."
+            }
+          ],
+          "boundary": "Fresh-process CUDA reload of a retained selected adapter remains blocked."
+        },
+        "held_out_inference": {
+          "status": "smoke_tested",
+          "evidence": [
+            {
+              "level": "smoke_tested",
+              "ref": "reports/macos-mps-smoke-test.md",
+              "claim": "The reloaded MPS adapter generated a finite held-out WAV."
+            }
+          ],
+          "boundary": "Adapted CUDA held-out generation remains blocked by missing artifact provenance."
+        },
+        "evaluation": {
+          "status": "blocked",
+          "evidence": [],
+          "boundary": "No selected adapted artifact has a complete frozen objective matrix or blind review."
+        },
+        "packaging": {
+          "status": "blocked",
+          "evidence": [],
+          "boundary": "No immutable selected adapter package with complete rights and evaluation evidence is recorded."
+        }
+      }
     },
     "full_sft": {
       "status": "upstream_only",
@@ -162,7 +228,16 @@
       "emotion_and_instruction_obedience",
       "artifact_severity",
       "listening_fatigue"
-    ]
+    ],
+    "matched_comparison": {
+      "status": "blocked",
+      "baseline_candidate": "audio8-base",
+      "adapted_candidate": "audio8-selected-adapter",
+      "blockers": [
+        "The selected adapted artifact is not retained on the tested CUDA or Mac host.",
+        "No frozen matched observation matrix or complete blind review exists."
+      ]
+    }
   },
   "rights": {
     "code": "The repository declares Apache-2.0 for its code and bundled model lineage; pin and review every distributed artifact.",
