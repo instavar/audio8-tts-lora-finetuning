@@ -1,6 +1,6 @@
 # Instavar Voice conformance
 
-This repository declares its model-specific adaptation and runtime surface in `instavar-voice-capabilities.json`. The manifest uses the public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation) pinned by CI to merge commit `8f4e3ce74ad43aefef5987cdc2273c738ac606c7`.
+This repository declares its model-specific adaptation and runtime surface in `instavar-voice-capabilities.json`. The manifest uses the public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation) pinned by CI to merge commit `b5e2995a53bcbdbb307241a2a68a37bd0bc04499`.
 
 Capability schema 1.2 separates validated CUDA training from bounded MPS reload and inference evidence. It records the missing selected adapter as an artifact-retention blocker rather than a model failure.
 
