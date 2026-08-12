@@ -92,7 +92,7 @@ selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
 
 Validate the recipe with evaluator revision
-`022c16a822ee4393dae9ce295199de59fecd4d43`. Use an empty work directory
+`5a94e658e4dfdf34ef1bce9ab59e070828df48fd`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
@@ -419,7 +419,7 @@ Fish S2 Pro.
 
 The lifecycle fixes evaluation batch size at one so timing belongs to one
 sample, preserves invalid generations as explicit rows, and uses evaluator
-revision `022c16a822ee4393dae9ce295199de59fecd4d43` to bind timing, duration,
+revision `5a94e658e4dfdf34ef1bce9ab59e070828df48fd` to bind timing, duration,
 and peak-memory fields to the frozen plan and live output audio. CUDA peak
 allocation is measured by PyTorch. MPS timing explicitly synchronizes the
 device, but non-CUDA paths omit peak memory because this runner has no equivalent
@@ -428,10 +428,11 @@ closed instead of accepting a synthetic zero. Use the packaged
 `objective-observations.json`, not the raw generation file, for a version 1.1
 runtime comparison.
 
-The pinned evaluator provides schema 1.3 frozen speaker-reference assignments
-and the optional schema 1.4 SpeechBrain ECAPA execution path. This companion
-does not bundle ECAPA weights or dependencies and does not invoke the learned
-metric automatically. Run it explicitly after generation with trusted,
-content-addressed checkpoints and a preregistered reference plan. Runtime-bound
-observations or same-recording smoke scores alone are not speaker-quality
-evidence.
+The pinned evaluator provides schema 1.3 frozen speaker-reference assignments,
+the optional schema 1.4 SpeechBrain ECAPA execution path, and the optional
+schema 1.5 local faster-whisper ASR path. This companion bundles neither model
+weights nor optional extractor dependencies and runs neither learned metric
+automatically. Run them explicitly after generation with trusted, content-addressed
+models, frozen decoding, and a preregistered reference plan where applicable.
+Runtime-bound observations, same-recording smoke scores, or human-recording ASR
+alone are not TTS-quality evidence.

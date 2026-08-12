@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: instavar/instavar-voice-evaluation
-          ref: 022c16a822ee4393dae9ce295199de59fecd4d43
+          ref: 5a94e658e4dfdf34ef1bce9ab59e070828df48fd
           path: .instavar-voice-evaluation
       - uses: actions/setup-python@v6
         with:
