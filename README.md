@@ -92,7 +92,7 @@ selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
 
 Validate the recipe with evaluator revision
-`e1229101703582dd0db0b84ddf1698a9348bc70e`. Use an empty work directory
+`3af85259470914e044bf95808ab76ff417107de1`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
@@ -419,7 +419,7 @@ Fish S2 Pro.
 
 The lifecycle fixes evaluation batch size at one so timing belongs to one
 sample, preserves invalid generations as explicit rows, and uses evaluator
-revision `e1229101703582dd0db0b84ddf1698a9348bc70e` to bind timing, duration,
+revision `3af85259470914e044bf95808ab76ff417107de1` to bind timing, duration,
 and peak-memory fields to the frozen plan and live output audio. CUDA peak
 allocation is measured by PyTorch. MPS timing explicitly synchronizes the
 device, but non-CUDA paths omit peak memory because this runner has no equivalent
@@ -435,6 +435,10 @@ generation-plan-bound ASR reference text from observation-declared strings.
 Version 0.21 adds plan-bound category strata so pronunciation, local-context,
 and long-form proxy regressions remain visible instead of disappearing into one
 candidate mean.
+Version 0.22 carries frozen lexical anchors and accepted ASR forms into the
+generation plan, reports hit, miss, coverage, and matched deltas, and rejects
+candidate-specific alias drift. Phrase hits remain recognition evidence, not
+pronunciation or accent judgments.
 This companion bundles neither model
 weights nor optional extractor dependencies and runs neither learned metric
 automatically. Run them explicitly after generation with trusted, content-addressed
