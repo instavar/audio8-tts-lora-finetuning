@@ -90,6 +90,13 @@ MPS device, hashes the complete local base-model tree, audits raw grouped
 splits, writes training outputs under the unique lifecycle work directory,
 selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
+The final stage also copies the complete package to an existing operator-declared
+`PERSISTED_PACKAGE_ROOT` outside both the checkout and lifecycle work directory.
+The filename includes the package SHA-256, an existing object is accepted only
+when its bytes match, and `persisted-package.json` records the durable path,
+hash, size, and whether it was reused. Preflight verifies that the destination
+supports a reversible write, fsync, and atomic hard-link publication before
+training begins.
 
 Validate the recipe with evaluator revision
 `8feadf7bbda75abe1c305c63e362c41b86451cda`. Use an empty work directory
@@ -97,6 +104,13 @@ outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
 quality or cross-runtime equivalence claim.
+
+The durable copy prevents a successful future lifecycle from depending only on
+an ephemeral run directory. It does not recover the historical adapter that is
+already missing, prove backup replication, or establish retention policy,
+access control, disaster recovery, or distribution rights. Treat the recorded
+path and hash as a handoff receipt and move it into managed storage under a
+separate reviewed policy when long-term retention is required.
 
 ## Promotion gate
 

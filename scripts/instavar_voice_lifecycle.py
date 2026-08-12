@@ -10,7 +10,8 @@ import shutil
 import subprocess
 import sys
 import tarfile
-from pathlib import Path
+import tempfile
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -33,6 +34,72 @@ def _path(name: str, *, directory: bool = False) -> Path:
 
 def _work() -> Path:
     return _path("INSTAVAR_VOICE_WORK_DIR", directory=True)
+
+
+def _persistent_package_root(*, protect_inputs: bool = True) -> Path:
+    root = _path("PERSISTED_PACKAGE_ROOT", directory=True)
+    work = _work()
+    repository = REPO_ROOT.resolve()
+    if root == work or root.is_relative_to(work):
+        raise ValueError("PERSISTED_PACKAGE_ROOT must be outside the lifecycle work directory")
+    if root == repository or root.is_relative_to(repository):
+        raise ValueError("PERSISTED_PACKAGE_ROOT must be outside the repository checkout")
+    if protect_inputs:
+        protected = {
+            "BASE_MODEL_DIR": _path("BASE_MODEL_DIR", directory=True),
+            "PREPARED_TRAIN_ROOT": _path("PREPARED_TRAIN_ROOT", directory=True),
+            "PREPARED_VALIDATION_ROOT": _path(
+                "PREPARED_VALIDATION_ROOT", directory=True
+            ),
+        }
+        for name, input_root in protected.items():
+            if root == input_root or root.is_relative_to(input_root):
+                raise ValueError(f"PERSISTED_PACKAGE_ROOT must not mutate {name}")
+    return root
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _probe_persistent_package_root(root: Path) -> dict[str, Any]:
+    probe_path: Path | None = None
+    linked_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=root,
+            prefix=".instavar-voice-persistence-probe.",
+            suffix=".partial",
+            delete=False,
+        ) as probe:
+            probe_path = Path(probe.name)
+            probe.write(b"instavar-voice-persistence-probe-v1\n")
+            probe.flush()
+            os.fsync(probe.fileno())
+        linked_path = probe_path.with_suffix(".linked")
+        os.link(probe_path, linked_path)
+        _fsync_directory(root)
+        if linked_path.read_bytes() != probe_path.read_bytes():
+            raise ValueError("persistent package root failed its atomic publication probe")
+        return {
+            "writable": True,
+            "atomic_hard_link": True,
+            "device": root.stat().st_dev,
+        }
+    except OSError as error:
+        raise ValueError(
+            f"PERSISTED_PACKAGE_ROOT cannot publish an atomic package: {error}"
+        ) from error
+    finally:
+        if linked_path is not None:
+            linked_path.unlink(missing_ok=True)
+        if probe_path is not None:
+            probe_path.unlink(missing_ok=True)
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -179,7 +246,10 @@ def _verify_prepared_root(manifest: Path, root: Path, *, label: str) -> None:
                 if not artifact.is_absolute():
                     artifact = manifest.parent / artifact
                 if not artifact.resolve().is_relative_to(root):
-                    raise ValueError(f"{label}:{line_number}: {field} escapes its declared prepared-data root")
+                    raise ValueError(
+                        f"{label}:{line_number}: {field} escapes its declared "
+                        "prepared-data root"
+                    )
 
 
 def _verify_dataset_lineage() -> dict[str, Any]:
@@ -225,6 +295,61 @@ def _archive(source: Path, destination: Path, *, arcname: str) -> None:
         archive.add(source, arcname=arcname, recursive=True)
 
 
+def _verify_persisted_package(path: Path, expected_sha256: str) -> None:
+    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+        raise ValueError(f"persisted package is missing, empty, or unsafe: {path}")
+    actual_sha256 = _sha256(path)
+    if actual_sha256 != expected_sha256:
+        raise ValueError(
+            f"persisted package hash mismatch: expected {expected_sha256}, got {actual_sha256}"
+        )
+
+
+def _persist_package(source: Path, root: Path) -> dict[str, Any]:
+    if source.is_symlink() or not source.is_file() or source.stat().st_size == 0:
+        raise ValueError(f"package source is missing, empty, or unsafe: {source}")
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(f"persistent package root is missing or unsafe: {root}")
+    package_sha256 = _sha256(source)
+    destination = root / f"audio8-adapter-package-sha256-{package_sha256}.tar"
+    reused_existing = destination.exists() or destination.is_symlink()
+    if reused_existing:
+        _verify_persisted_package(destination, package_sha256)
+    else:
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=root,
+                prefix=f".{destination.name}.",
+                suffix=".partial",
+                delete=False,
+            ) as target:
+                temporary_path = Path(target.name)
+                with source.open("rb") as package:
+                    shutil.copyfileobj(package, target, length=1024 * 1024)
+                target.flush()
+                os.fsync(target.fileno())
+            _verify_persisted_package(temporary_path, package_sha256)
+            try:
+                os.link(temporary_path, destination)
+            except FileExistsError:
+                reused_existing = True
+            else:
+                _fsync_directory(root)
+            _verify_persisted_package(destination, package_sha256)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+    return {
+        "schema_version": "1.0.0",
+        "package_sha256": package_sha256,
+        "package_bytes": source.stat().st_size,
+        "persisted_path": str(destination),
+        "reused_existing": reused_existing,
+    }
+
+
 def _stage_adapter(source: Path, destination: Path) -> None:
     if source.is_symlink() or not source.is_dir():
         raise ValueError(f"selected adapter must be a non-symlink directory: {source}")
@@ -250,9 +375,13 @@ def _extract(source: Path, destination: Path) -> Path:
         if not members:
             raise ValueError("adapter archive is empty")
         for member in members:
+            parts = PurePosixPath(member.name).parts
             target = (destination / member.name).resolve()
             if (
-                not target.is_relative_to(destination.resolve())
+                not parts
+                or parts[0] != "adapter"
+                or ".." in parts
+                or not target.is_relative_to(destination.resolve())
                 or member.issym()
                 or member.islnk()
                 or not (member.isfile() or member.isdir())
@@ -329,6 +458,8 @@ def _preflight() -> None:
             "GENERATION_PLAN must be schema 1.0.0 or 1.1.0 and contain CANDIDATE_ID rows"
         )
     selected = _safe_name(os.environ["SELECTED_ADAPTER_NAME"])
+    persistent_package_root = _persistent_package_root()
+    persistence_probe = _probe_persistent_package_root(persistent_package_root)
     _write_json(
         _work() / "preflight" / "preflight.json",
         {
@@ -340,6 +471,8 @@ def _preflight() -> None:
             "device": os.environ["DEVICE"],
             "dtype": os.environ["DTYPE"],
             "selected_adapter_name": selected,
+            "persistent_package_root": str(persistent_package_root),
+            "persistence_probe": persistence_probe,
             "base_model": _tree_manifest(base),
             "corpus_audit": audit,
             "prepared_manifests": {
@@ -498,7 +631,10 @@ def _package() -> None:
             ),
         },
     )
-    _archive(staging, work / "package" / "adapter-package.tar", arcname="package")
+    package = work / "package" / "adapter-package.tar"
+    _archive(staging, package, arcname="package")
+    receipt = _persist_package(package, _persistent_package_root())
+    _write_json(work / "package" / "persisted-package.json", receipt)
 
 
 def run(stage: str) -> None:

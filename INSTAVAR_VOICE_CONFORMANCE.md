@@ -2,9 +2,9 @@
 
 This repository declares its model-specific adaptation and runtime surface in `instavar-voice-capabilities.json`. The manifest and executable [`instavar-voice-backend.json`](instavar-voice-backend.json) LoRA recipe use the public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation) pinned by CI to commit `8feadf7bbda75abe1c305c63e362c41b86451cda`.
 
-The executable recipe requires an explicit CUDA or MPS device and compatible dtype. It audits raw grouped splits, isolates trainer output, selects one exact checkpoint child, reloads it in a fresh process, runs the frozen evaluation plan, and packages the adapter with source and evaluation evidence. One passed runtime does not establish equivalence with the other runtime.
+The executable recipe requires an explicit CUDA or MPS device and compatible dtype. It audits raw grouped splits, isolates trainer output, selects one exact checkpoint child, reloads it in a fresh process, runs the frozen evaluation plan, and packages the adapter with source and evaluation evidence. It also requires a durable package root outside the checkout and lifecycle work directory, verifies atomic publication before training, and writes a content-addressed copy plus receipt after packaging. One passed runtime does not establish equivalence with the other runtime.
 
-Capability schema 1.2 separates validated CUDA training from bounded MPS reload and inference evidence. It records the missing selected adapter as an artifact-retention blocker rather than a model failure.
+Capability schema 1.2 separates validated CUDA training from bounded MPS reload and inference evidence. It records the missing selected adapter as an artifact-retention blocker rather than a model failure. The durable-copy correction prevents the same local lifecycle loss mode for future runs but neither recovers the missing historical adapter nor proves backup or disaster-recovery coverage.
 
 A capability marked `supported` means the referenced repository evidence reaches the stated engineering boundary. It does not prove perceptual quality, accent fidelity, commercial suitability, or equivalence across untested runtimes. `unverified_for_adapter` keeps an upstream or community runtime visible without implying that this repository's adapted artifact works there.
 

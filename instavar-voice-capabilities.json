@@ -80,9 +80,15 @@
           "boundary": "No selected adapted artifact has a complete frozen objective matrix or blind review."
         },
         "packaging": {
-          "status": "blocked",
-          "evidence": [],
-          "boundary": "No immutable selected adapter package with complete rights and evaluation evidence is recorded."
+          "status": "repository_declared",
+          "evidence": [
+            {
+              "level": "repository_declared",
+              "ref": "README.md#executable-instavar-voice-lifecycle",
+              "claim": "The lifecycle publishes a content-addressed final package to a preflight-tested operator-declared persistence root and records a receipt."
+            }
+          ],
+          "boundary": "No real package has been retained through this corrected path, and local durability does not prove backup, disaster recovery, access control, or distribution rights."
         }
       }
     },
@@ -248,6 +254,7 @@
   "known_gaps": [
     "A one-step MPS preflight does not establish training quality or long-session stability.",
     "The adapted CUDA suite is blocked because the prior adapter artifact is not available on either tested host.",
+    "Future lifecycle packages have a repository-declared durable retention path, but it has not preserved a real adapter yet.",
     "Adapter-aware ONNX and SGLang exports have not passed conformance.",
     "No selected adapter has passed blinded long-form Singapore English listening."
   ]

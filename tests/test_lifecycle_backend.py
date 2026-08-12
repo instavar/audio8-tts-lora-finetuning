@@ -27,6 +27,9 @@ class LifecycleBackendTests(unittest.TestCase):
         self.assertEqual(spec["schema_version"], "1.2.0")
         self.assertEqual(spec["capability_binding"]["adaptation"], "lora")
         self.assertEqual(spec["capability_binding"]["runtime_ids"], ["pytorch_cuda", "pytorch_mps"])
+        required = {item["name"] for item in spec["required_environment"]}
+        self.assertIn("PERSISTED_PACKAGE_ROOT", required)
+        self.assertIn("package/persisted-package.json", spec["expected_artifacts"]["package"])
         for stage in ("preflight", "train", "infer", "evaluate", "package"):
             self.assertEqual(spec["commands"][stage][-1], stage)
 
@@ -162,6 +165,93 @@ class LifecycleBackendTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 LIFECYCLE._extract(special, root / "special-output")
 
+            sibling = root / "sibling.tar"
+            with tarfile.open(sibling, "w") as archive:
+                adapter = tarfile.TarInfo("adapter/adapter_config.json")
+                adapter.size = 2
+                archive.addfile(adapter, io.BytesIO(b"{}"))
+                hidden = tarfile.TarInfo("hidden/payload.bin")
+                hidden.size = 7
+                archive.addfile(hidden, io.BytesIO(b"payload"))
+            with self.assertRaisesRegex(ValueError, "unsafe adapter archive member"):
+                LIFECYCLE._extract(sibling, root / "sibling-output")
+
+            traversal = root / "traversal.tar"
+            with tarfile.open(traversal, "w") as archive:
+                member = tarfile.TarInfo("adapter/../escape.bin")
+                member.size = 6
+                archive.addfile(member, io.BytesIO(b"escape"))
+            with self.assertRaisesRegex(ValueError, "unsafe adapter archive member"):
+                LIFECYCLE._extract(traversal, root / "traversal-output")
+
+    def test_persist_package_is_content_addressed_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "adapter-package.tar"
+            source.write_bytes(b"immutable package")
+            store = root / "store"
+            store.mkdir()
+
+            first = LIFECYCLE._persist_package(source, store)
+            destination = Path(first["persisted_path"])
+            self.assertTrue(destination.is_file())
+            self.assertEqual(destination.read_bytes(), source.read_bytes())
+            self.assertFalse(first["reused_existing"])
+
+            second = LIFECYCLE._persist_package(source, store)
+            self.assertEqual(second["package_sha256"], first["package_sha256"])
+            self.assertTrue(second["reused_existing"])
+
+            destination.write_bytes(b"tampered")
+            with self.assertRaisesRegex(ValueError, "hash mismatch"):
+                LIFECYCLE._persist_package(source, store)
+
+    def test_persistent_package_root_must_not_be_ephemeral(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            environment = {
+                "INSTAVAR_VOICE_WORK_DIR": str(work),
+                "PERSISTED_PACKAGE_ROOT": str(work),
+            }
+            with (
+                patch.dict(os.environ, environment, clear=False),
+                self.assertRaisesRegex(ValueError, "outside the lifecycle work directory"),
+            ):
+                LIFECYCLE._persistent_package_root(protect_inputs=False)
+
+    def test_persistent_package_root_cannot_mutate_input_trees(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            work = root / "work"
+            work.mkdir()
+            model = root / "model"
+            train = root / "prepared-train"
+            validation = root / "prepared-validation"
+            for path in (model, train, validation):
+                path.mkdir()
+            store = model / "packages"
+            store.mkdir()
+            environment = {
+                "INSTAVAR_VOICE_WORK_DIR": str(work),
+                "PERSISTED_PACKAGE_ROOT": str(store),
+                "BASE_MODEL_DIR": str(model),
+                "PREPARED_TRAIN_ROOT": str(train),
+                "PREPARED_VALIDATION_ROOT": str(validation),
+            }
+            with (
+                patch.dict(os.environ, environment, clear=False),
+                self.assertRaisesRegex(ValueError, "must not mutate BASE_MODEL_DIR"),
+            ):
+                LIFECYCLE._persistent_package_root()
+
+    def test_persistence_probe_leaves_no_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result = LIFECYCLE._probe_persistent_package_root(root)
+            self.assertTrue(result["writable"])
+            self.assertTrue(result["atomic_hard_link"])
+            self.assertEqual(list(root.iterdir()), [])
+
     def test_train_isolates_output_and_archives_only_selected_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -201,7 +291,11 @@ class LifecycleBackendTests(unittest.TestCase):
             with (
                 patch.dict(os.environ, environment, clear=False),
                 patch.object(LIFECYCLE, "_run", side_effect=fake_run),
-                patch.object(LIFECYCLE, "_verify_dataset_lineage", return_value={"status": "passed"}),
+                patch.object(
+                    LIFECYCLE,
+                    "_verify_dataset_lineage",
+                    return_value={"status": "passed"},
+                ),
             ):
                 LIFECYCLE._train()
             with tarfile.open(work / "train" / "selected-adapter.tar", "r") as archive:
