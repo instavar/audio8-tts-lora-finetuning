@@ -92,7 +92,7 @@ selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
 
 Validate the recipe with evaluator revision
-`2088146501081138b87e8e398eda610a392c0d4d`. Use an empty work directory
+`8feadf7bbda75abe1c305c63e362c41b86451cda`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
@@ -419,7 +419,7 @@ Fish S2 Pro.
 
 The lifecycle fixes evaluation batch size at one so timing belongs to one
 sample, preserves invalid generations as explicit rows, and uses evaluator
-revision `2088146501081138b87e8e398eda610a392c0d4d` to bind timing, duration,
+revision `8feadf7bbda75abe1c305c63e362c41b86451cda` to bind timing, duration,
 and peak-memory fields to the frozen plan and live output audio. CUDA peak
 allocation is measured by PyTorch. MPS timing explicitly synchronizes the
 device, but non-CUDA paths omit peak memory because this runner has no equivalent
@@ -452,6 +452,11 @@ Version 0.26 adds deterministic per-rater presentation schedules that
 counterbalance candidate precedence within each prompt and seed. Aggregation
 recomputes the private audit, requires the scheduled pseudonymous rater set,
 and keeps order, fatigue, carryover, and reviewer-compliance limits explicit.
+Version 0.27 exports one privacy-preserving packet per pseudonymous rater and
+binds criterion-major presentation logs plus ratings into canonical submission
+receipts. Aggregation reconstructs each packet, rejects forged metadata, and
+records missing reviewers or cells as attrition. Receipt hashes establish
+content integrity, not reviewer identity, delivery, attention, or independence.
 This companion bundles neither model
 weights nor optional extractor dependencies and runs neither learned metric
 automatically. Run them explicitly after generation with trusted, content-addressed
