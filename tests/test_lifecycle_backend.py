@@ -10,6 +10,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from instavar_voice_lab.lineage import build_dataset_lineage
+
 ROOT = Path(__file__).parents[1]
 SPEC = importlib.util.spec_from_file_location(
     "audio8_lifecycle", ROOT / "scripts" / "instavar_voice_lifecycle.py"
@@ -77,6 +79,72 @@ class LifecycleBackendTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 LIFECYCLE._audit_prepared_manifest(manifest)
 
+    def test_dataset_lineage_binds_raw_splits_to_codec_trees(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw: dict[str, Path] = {}
+            for split in ("train", "validation", "test"):
+                audio = root / f"{split}.wav"
+                audio.write_bytes(b"audio")
+                manifest = root / f"raw-{split}.jsonl"
+                manifest.write_text(json.dumps({"audio": str(audio), "text": split}) + "\n")
+                raw[split] = manifest
+            prepared: dict[str, Path] = {}
+            manifests: dict[str, Path] = {}
+            for split in ("train", "validation"):
+                split_root = root / f"prepared-{split}"
+                split_root.mkdir()
+                codes = split_root / "codes.npy"
+                codes.write_bytes(split.encode())
+                manifest = split_root / "manifest.jsonl"
+                manifest.write_text(
+                    json.dumps({"id": split, "text": split, "target_codes": codes.name}) + "\n"
+                )
+                prepared[split] = split_root
+                manifests[split] = manifest
+            receipt = root / "dataset-lineage.json"
+            receipt.write_text(
+                json.dumps(
+                    build_dataset_lineage(
+                        lineage_id="audio8-fixture-v1",
+                        producer_repository="instavar/audio8-tts-lora-finetuning",
+                        producer_revision="a" * 40,
+                        inputs={
+                            "raw_train": (raw["train"], "file"),
+                            "raw_validation": (raw["validation"], "file"),
+                            "raw_test": (raw["test"], "file"),
+                        },
+                        outputs={
+                            "prepared_train": (prepared["train"], "tree"),
+                            "prepared_validation": (prepared["validation"], "tree"),
+                        },
+                    )
+                )
+            )
+            environment = {
+                "RAW_TRAIN_JSONL": str(raw["train"]),
+                "RAW_VALIDATION_JSONL": str(raw["validation"]),
+                "RAW_TEST_JSONL": str(raw["test"]),
+                "TRAIN_JSONL": str(manifests["train"]),
+                "EVAL_JSONL": str(manifests["validation"]),
+                "PREPARED_TRAIN_ROOT": str(prepared["train"]),
+                "PREPARED_VALIDATION_ROOT": str(prepared["validation"]),
+                "DATASET_LINEAGE": str(receipt),
+            }
+            with (
+                patch.dict(os.environ, environment, clear=False),
+                patch.object(LIFECYCLE, "_git_head", return_value="a" * 40),
+            ):
+                report = LIFECYCLE._verify_dataset_lineage()
+            self.assertEqual(report["lineage_id"], "audio8-fixture-v1")
+            (prepared["validation"] / "codes.npy").write_bytes(b"changed")
+            with (
+                patch.dict(os.environ, environment, clear=False),
+                patch.object(LIFECYCLE, "_git_head", return_value="a" * 40),
+                self.assertRaisesRegex(ValueError, "prepared_validation"),
+            ):
+                LIFECYCLE._verify_dataset_lineage()
+
     def test_extract_rejects_empty_and_special_archives(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -133,6 +201,7 @@ class LifecycleBackendTests(unittest.TestCase):
             with (
                 patch.dict(os.environ, environment, clear=False),
                 patch.object(LIFECYCLE, "_run", side_effect=fake_run),
+                patch.object(LIFECYCLE, "_verify_dataset_lineage", return_value={"status": "passed"}),
             ):
                 LIFECYCLE._train()
             with tarfile.open(work / "train" / "selected-adapter.tar", "r") as archive:

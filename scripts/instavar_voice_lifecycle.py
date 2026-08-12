@@ -163,6 +163,50 @@ def _audit_prepared_manifest(path: Path) -> tuple[dict[str, Any], set[str]]:
     return {"path": str(path), "sha256": _sha256(path), "rows": rows}, sample_ids
 
 
+def _verify_prepared_root(manifest: Path, root: Path, *, label: str) -> None:
+    if not manifest.is_relative_to(root):
+        raise ValueError(f"{label} manifest must be inside its declared prepared-data root")
+    with manifest.open(encoding="utf-8") as source:
+        for line_number, raw in enumerate(source, 1):
+            if not raw.strip():
+                continue
+            row = json.loads(raw)
+            for field in ("target_codes", "reference_codes", "reference_audio"):
+                value = str(row.get(field, "")).strip()
+                if not value:
+                    continue
+                artifact = Path(value).expanduser()
+                if not artifact.is_absolute():
+                    artifact = manifest.parent / artifact
+                if not artifact.resolve().is_relative_to(root):
+                    raise ValueError(f"{label}:{line_number}: {field} escapes its declared prepared-data root")
+
+
+def _verify_dataset_lineage() -> dict[str, Any]:
+    from instavar_voice_lab.lineage import verify_dataset_lineage
+
+    train = _path("TRAIN_JSONL")
+    validation = _path("EVAL_JSONL")
+    train_root = _path("PREPARED_TRAIN_ROOT", directory=True)
+    validation_root = _path("PREPARED_VALIDATION_ROOT", directory=True)
+    _verify_prepared_root(train, train_root, label="train")
+    _verify_prepared_root(validation, validation_root, label="validation")
+    document = json.loads(_path("DATASET_LINEAGE").read_text(encoding="utf-8"))
+    return verify_dataset_lineage(
+        document,
+        producer_revision=_git_head(),
+        inputs={
+            "raw_train": (_path("RAW_TRAIN_JSONL"), "file"),
+            "raw_validation": (_path("RAW_VALIDATION_JSONL"), "file"),
+            "raw_test": (_path("RAW_TEST_JSONL"), "file"),
+        },
+        outputs={
+            "prepared_train": (train_root, "tree"),
+            "prepared_validation": (validation_root, "tree"),
+        },
+    )
+
+
 def _archive(source: Path, destination: Path, *, arcname: str) -> None:
     if source.is_symlink() or not source.is_dir():
         raise ValueError(f"archive source must be a non-symlink directory: {source}")
@@ -245,6 +289,7 @@ def _training_settings() -> dict[str, str]:
 def _preflight() -> None:
     from instavar_voice_lab.corpus import audit_corpus
 
+    lineage = _verify_dataset_lineage()
     experiment = json.loads(_path("INSTAVAR_VOICE_EXPERIMENT_MANIFEST").read_text(encoding="utf-8"))
     revision = _git_head()
     if not _git_clean():
@@ -301,11 +346,13 @@ def _preflight() -> None:
             },
             "generation_rows": len(rows),
             "training_settings": _training_settings(),
+            "dataset_lineage": lineage,
         },
     )
 
 
 def _train() -> None:
+    _verify_dataset_lineage()
     work = _work()
     output = work / "train" / "output"
     environment = os.environ.copy()
@@ -406,6 +453,7 @@ def _package() -> None:
         "smoke-candidate.wav": work / "infer" / "candidate.wav",
         "experiment-manifest.json": _path("INSTAVAR_VOICE_EXPERIMENT_MANIFEST"),
         "generation-plan.json": _path("GENERATION_PLAN"),
+        "dataset-lineage.json": _path("DATASET_LINEAGE"),
     }
     for name, source in sources.items():
         if source.is_symlink() or not source.is_file() or source.stat().st_size == 0:
@@ -445,6 +493,8 @@ def run(stage: str) -> None:
     if stage not in actions:
         raise ValueError(f"unknown lifecycle stage: {stage}")
     actions[stage]()
+    if stage in {"preflight", "train"}:
+        _verify_dataset_lineage()
     _write_json(
         Path(os.environ["INSTAVAR_VOICE_STAGE_RESULT"]),
         {"schema_version": "1.0.0", "stage": stage, "status": "passed"},
