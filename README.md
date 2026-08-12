@@ -92,7 +92,7 @@ selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
 
 Validate the recipe with evaluator revision
-`cdf32a6f45afa11cb220da4463f80d00de0b9c27`. Use an empty work directory
+`5f5eb50f9603fc265935fb8ac7efa74630d8dc94`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
@@ -419,7 +419,7 @@ Fish S2 Pro.
 
 The lifecycle fixes evaluation batch size at one so timing belongs to one
 sample, preserves invalid generations as explicit rows, and uses evaluator
-revision `cdf32a6f45afa11cb220da4463f80d00de0b9c27` to bind timing, duration,
+revision `5f5eb50f9603fc265935fb8ac7efa74630d8dc94` to bind timing, duration,
 and peak-memory fields to the frozen plan and live output audio. CUDA peak
 allocation is measured by PyTorch. MPS timing explicitly synchronizes the
 device, but non-CUDA paths omit peak memory because this runner has no equivalent
@@ -442,6 +442,9 @@ pronunciation or accent judgments.
 Version 0.23 preregisters criterion-specific blind-listening assignments so
 lexical pronunciation, cadence, fatigue, and emotion ratings only cover prompts
 that can support those claims while preserving candidate-symmetric coverage.
+Version 0.24 binds exact requested text, optional instructions, and lexical
+target surfaces into each blind stimulus while excluding accepted ASR aliases
+and candidate identity. Reviewers no longer need an uncontrolled prompt file.
 This companion bundles neither model
 weights nor optional extractor dependencies and runs neither learned metric
 automatically. Run them explicitly after generation with trusted, content-addressed
