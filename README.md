@@ -92,7 +92,7 @@ selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
 
 Validate the recipe with evaluator revision
-`6fa431f6ab6bb9867a5fc210a187523012323ecb`. Use an empty work directory
+`022c16a822ee4393dae9ce295199de59fecd4d43`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
@@ -419,7 +419,7 @@ Fish S2 Pro.
 
 The lifecycle fixes evaluation batch size at one so timing belongs to one
 sample, preserves invalid generations as explicit rows, and uses evaluator
-revision `6fa431f6ab6bb9867a5fc210a187523012323ecb` to bind timing, duration,
+revision `022c16a822ee4393dae9ce295199de59fecd4d43` to bind timing, duration,
 and peak-memory fields to the frozen plan and live output audio. CUDA peak
 allocation is measured by PyTorch. MPS timing explicitly synchronizes the
 device, but non-CUDA paths omit peak memory because this runner has no equivalent
@@ -428,9 +428,10 @@ closed instead of accepting a synthetic zero. Use the packaged
 `objective-observations.json`, not the raw generation file, for a version 1.1
 runtime comparison.
 
-The pinned evaluator also provides schema 1.3 frozen speaker-reference
-assignments, fixed per-reference aggregation, and embedding-value binding. A
-producer must commit or otherwise timestamp the assignment plan before
-generation for stronger chronology evidence. This companion does not bundle a
-speaker encoder or execute that external stage. Runtime-bound observations alone
-are not speaker-quality evidence.
+The pinned evaluator provides schema 1.3 frozen speaker-reference assignments
+and the optional schema 1.4 SpeechBrain ECAPA execution path. This companion
+does not bundle ECAPA weights or dependencies and does not invoke the learned
+metric automatically. Run it explicitly after generation with trusted,
+content-addressed checkpoints and a preregistered reference plan. Runtime-bound
+observations or same-recording smoke scores alone are not speaker-quality
+evidence.
