@@ -92,7 +92,7 @@ selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
 
 Validate the recipe with evaluator revision
-`a85677df59c416675048967f64f4f97dd6b530cd`. Use an empty work directory
+`5dd7369095a14adbf7f910bc7c53ec27051ebcb0`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual

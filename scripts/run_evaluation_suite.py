@@ -143,6 +143,7 @@ def main() -> int:
         record = records.get(row["sample_id"])
         failure = failures.get(row["sample_id"])
         observation = {
+            "observation_schema_version": "1.0.0",
             "sample_id": row["sample_id"],
             "candidate_id": row["candidate_id"],
             "prompt_id": row["prompt_id"],
