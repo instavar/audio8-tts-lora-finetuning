@@ -82,6 +82,22 @@ python audio8_tts_infer.py \
   --output outputs/adapter-check.wav
 ```
 
+### Executable Instavar Voice lifecycle
+
+[`instavar-voice-backend.json`](instavar-voice-backend.json) turns the Audio8
+LoRA path into a five-stage executable recipe. It requires an explicit CUDA or
+MPS device, hashes the complete local base-model tree, audits raw grouped
+splits, writes training outputs under the unique lifecycle work directory,
+selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
+process, evaluates the frozen prompt plan, and packages immutable evidence.
+
+Validate the recipe with evaluator merge
+`d63ab559a8e0592bd373f9b51421040b540fb2b7`. Use an empty work directory
+outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
+such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
+an MPS pass proves only the selected MPS environment. Neither is a perceptual
+quality or cross-runtime equivalence claim.
+
 ## Promotion gate
 
 ### Frozen multi-prompt adapter evaluation
