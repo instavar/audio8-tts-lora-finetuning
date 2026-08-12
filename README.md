@@ -92,7 +92,7 @@ selects one exact Trainer checkpoint, reloads the archived adapter in a fresh
 process, evaluates the frozen prompt plan, and packages immutable evidence.
 
 Validate the recipe with evaluator revision
-`d995f199c8acc3ccfefbabcd9a95af2d83899548`. Use an empty work directory
+`283af52ad28debbdd539837873c9d73ced7c8418`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
@@ -419,7 +419,7 @@ Fish S2 Pro.
 
 The lifecycle fixes evaluation batch size at one so timing belongs to one
 sample, preserves invalid generations as explicit rows, and uses evaluator
-revision `d995f199c8acc3ccfefbabcd9a95af2d83899548` to bind timing, duration,
+revision `283af52ad28debbdd539837873c9d73ced7c8418` to bind timing, duration,
 and peak-memory fields to the frozen plan and live output audio. CUDA peak
 allocation is measured by PyTorch. MPS timing explicitly synchronizes the
 device, but non-CUDA paths omit peak memory because this runner has no equivalent
@@ -427,3 +427,10 @@ peak-allocation probe. A version 1.1 plan requiring peak memory therefore fails
 closed instead of accepting a synthetic zero. Use the packaged
 `objective-observations.json`, not the raw generation file, for a version 1.1
 runtime comparison.
+
+The pinned evaluator also provides schema 1.2 content-addressed speaker
+reference sets, fixed per-reference aggregation, and embedding-value binding.
+This companion does not bundle a speaker encoder, so that extraction remains an
+explicit external stage. A plan-required speaker metric must use the stronger
+reference-set contract; runtime-bound observations alone are not speaker-quality
+evidence.
