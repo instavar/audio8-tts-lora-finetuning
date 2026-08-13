@@ -60,6 +60,9 @@ fi
   --gradient_checkpointing "${GRADIENT_CHECKPOINTING:-true}" \
   --freeze_slow_ar "${FREEZE_SLOW_AR:-false}" \
   --freeze_fast_ar "${FREEZE_FAST_AR:-false}" \
+  --guarded_checkpoints "${GUARDED_CHECKPOINTS:-false}" \
+  --resume_from "${RESUME_FROM:-}" \
+  --trust_resume_state "${TRUST_RESUME_STATE:-false}" \
   --resume_mode "${RESUME_MODE:-none}" \
   --report_to "${REPORT_TO:-tensorboard}" \
   --remove_unused_columns false \

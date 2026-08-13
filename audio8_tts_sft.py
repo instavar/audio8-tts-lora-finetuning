@@ -10,17 +10,27 @@ from __future__ import annotations
 import json
 import logging
 import math
-from dataclasses import dataclass, field
+import platform
+import sys
+from dataclasses import asdict, dataclass, field
 from functools import partial
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
 import torch
 import torch.nn.functional as F
 from peft import LoraConfig, TaskType, get_peft_model
-from torch.utils.data import Dataset
 from torch.utils.checkpoint import checkpoint
-from transformers import AutoModel, AutoProcessor, HfArgumentParser, Trainer, TrainingArguments
+from torch.utils.data import Dataset
+from transformers import (
+    AutoModel,
+    AutoProcessor,
+    HfArgumentParser,
+    Trainer,
+    TrainerCallback,
+    TrainingArguments,
+)
 from transformers.trainer_utils import get_last_checkpoint
 
 from audio8_tts_data import (
@@ -32,7 +42,17 @@ from audio8_tts_data import (
     resolve_manifest_path,
     validate_sample_id,
 )
-
+from audio8_tts_resume import (
+    ResumeContractError,
+    acquire_output_lock,
+    assert_save_destination_absent,
+    build_contract,
+    prune_owned_checkpoints,
+    require_fresh_output,
+    resolve_resume_request,
+    validate_resume_checkpoint,
+    write_checkpoint_sidecar,
+)
 
 LOGGER = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -71,7 +91,19 @@ class Audio8TTSTrainingArguments(TrainingArguments):
     )
     resume_mode: str = field(
         default="none",
-        metadata={"help": "none, auto/latest, or an explicit Trainer checkpoint path."},
+        metadata={"help": "Legacy unguarded mode: none, auto/latest, or an exact checkpoint."},
+    )
+    resume_from: str | None = field(
+        default=None,
+        metadata={"help": "Exact checkpoint-N path for guarded single-process resume."},
+    )
+    trust_resume_state: bool = field(
+        default=False,
+        metadata={"help": "Acknowledge trusted pickle-capable optimizer and RNG state."},
+    )
+    guarded_checkpoints: bool = field(
+        default=False,
+        metadata={"help": "Write and enforce Instavar content-bound checkpoint sidecars."},
     )
     slow_loss_weight: float = field(default=1.0)
     fast_loss_weight: float = field(default=1.0)
@@ -109,9 +141,7 @@ class Audio8TTSDataset(Dataset):
         seen: set[str] = set()
         for line_number, value in read_jsonl(self.manifest):
             try:
-                sample_id = validate_sample_id(
-                    value.get("id"), fallback=f"row_{line_number:06d}"
-                )
+                sample_id = validate_sample_id(value.get("id"), fallback=f"row_{line_number:06d}")
                 text = clean_text(value.get("text"), field_name="text")
                 target_codes = resolve_manifest_path(
                     value.get("target_codes"), self.manifest, field_name="target_codes"
@@ -119,9 +149,7 @@ class Audio8TTSDataset(Dataset):
                 reference_value = value.get("reference_codes")
                 reference_text_value = value.get("reference_text")
                 if bool(reference_value) != bool(reference_text_value):
-                    raise ValueError(
-                        "reference_codes and reference_text must be provided together"
-                    )
+                    raise ValueError("reference_codes and reference_text must be provided together")
                 reference_codes = (
                     resolve_manifest_path(
                         reference_value, self.manifest, field_name="reference_codes"
@@ -139,13 +167,9 @@ class Audio8TTSDataset(Dataset):
                     f"{self.manifest}:{line_number}: invalid prepared row: {exc}"
                 ) from exc
             if sample_id in seen:
-                raise ValueError(
-                    f"{self.manifest}:{line_number}: duplicate id {sample_id!r}"
-                )
+                raise ValueError(f"{self.manifest}:{line_number}: duplicate id {sample_id!r}")
             seen.add(sample_id)
-            rows.append(
-                PreparedRow(sample_id, text, target_codes, reference_codes, reference_text)
-            )
+            rows.append(PreparedRow(sample_id, text, target_codes, reference_codes, reference_text))
             if max_samples is not None and len(rows) >= int(max_samples):
                 break
         if not rows:
@@ -158,9 +182,7 @@ class Audio8TTSDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         row = self.rows[index]
-        target_codes = load_codes(
-            row.target_codes, num_codebooks=int(self.config.num_codebooks)
-        )
+        target_codes = load_codes(row.target_codes, num_codebooks=int(self.config.num_codebooks))
         reference_codes = (
             load_codes(row.reference_codes, num_codebooks=int(self.config.num_codebooks))
             if row.reference_codes is not None
@@ -207,7 +229,9 @@ def set_trainable_modules(model: torch.nn.Module, *, freeze_slow: bool, freeze_f
             parameter.requires_grad = False
         if freeze_fast and name.startswith(fast_prefixes):
             parameter.requires_grad = False
-    trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+    trainable = sum(
+        parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+    )
     total = sum(parameter.numel() for parameter in model.parameters())
     if trainable == 0:
         raise ValueError("freeze_slow_ar and freeze_fast_ar leave no trainable parameters")
@@ -226,9 +250,7 @@ def fast_codebook_logits(
     hidden = torch.cat((hidden[:, None, :], model.fast_embeddings(prefix)), dim=1)
     length = int(hidden.shape[1])
     positions = torch.arange(length, device=hidden.device)
-    attention_mask = torch.ones(
-        (hidden.shape[0], length), dtype=torch.long, device=hidden.device
-    )
+    attention_mask = torch.ones((hidden.shape[0], length), dtype=torch.long, device=hidden.device)
     mask = model._causal_mask(attention_mask, positions, length)
     rope = model.fast_freqs_cis[:length]
     for layer in model.fast_layers:
@@ -281,9 +303,9 @@ class Audio8TTSTrainer(Trainer):
             labels[:, 0].reshape(-1),
             ignore_index=-100,
         )
-        semantic_mask = labels[:, 0].ge(int(core.config.semantic_begin_id)) & labels[
-            :, 0
-        ].le(int(core.config.semantic_end_id))
+        semantic_mask = labels[:, 0].ge(int(core.config.semantic_begin_id)) & labels[:, 0].le(
+            int(core.config.semantic_end_id)
+        )
         if not semantic_mask.any():
             raise ValueError("batch contains no supervised semantic frames")
 
@@ -340,6 +362,102 @@ def resolve_resume_checkpoint(output_dir: str, mode: str) -> str | None:
     return str(path)
 
 
+def _package_version(name: str) -> str | None:
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return None
+
+
+def _dataset_contract_files(dataset: Audio8TTSDataset | None) -> list[Path]:
+    if dataset is None:
+        return []
+    paths = [dataset.manifest]
+    for row in dataset.rows:
+        paths.append(row.target_codes)
+        if row.reference_codes is not None:
+            paths.append(row.reference_codes)
+    return paths
+
+
+def _training_contract_config(
+    model_args: ModelArguments,
+    data_args: DataArguments,
+    training_args: Audio8TTSTrainingArguments,
+) -> dict[str, Any]:
+    training = asdict(training_args)
+    for name in ("resume_from", "resume_mode", "trust_resume_state", "guarded_checkpoints"):
+        training.pop(name, None)
+    return {
+        "model": asdict(model_args),
+        "data": asdict(data_args),
+        "trainer": training,
+    }
+
+
+def _runtime_contract(training_args: Audio8TTSTrainingArguments) -> dict[str, Any]:
+    device = training_args.device
+    device_name: str | None = None
+    if device.type == "cuda" and torch.cuda.is_available():
+        device_name = torch.cuda.get_device_name(device)
+    return {
+        "python": platform.python_version(),
+        "python_executable": str(Path(sys.executable).resolve()),
+        "implementation": platform.python_implementation(),
+        "platform": platform.platform(),
+        "torch": torch.__version__,
+        "transformers": _package_version("transformers"),
+        "peft": _package_version("peft"),
+        "accelerate": _package_version("accelerate"),
+        "cuda": torch.version.cuda,
+        "device": str(device),
+        "device_name": device_name,
+        "world_size": training_args.world_size,
+    }
+
+
+class GuardedCheckpointCallback(TrainerCallback):
+    """Publish sidecars last and perform only ownership-validated retention."""
+
+    def __init__(
+        self,
+        *,
+        output_dir: Path,
+        contract: dict[str, Any],
+        keep_last: int | None,
+    ) -> None:
+        self.output_dir = output_dir
+        self.contract = contract
+        self.keep_last = keep_last
+
+    def _preflight_save(self, state, control) -> None:
+        if control.should_save:
+            assert_save_destination_absent(self.output_dir, state.global_step)
+
+    def on_step_end(self, args, state, control, **kwargs):
+        self._preflight_save(state, control)
+        return control
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        self._preflight_save(state, control)
+        return control
+
+    def on_save(self, args, state, control, **kwargs):
+        checkpoint = self.output_dir / f"checkpoint-{state.global_step}"
+        write_checkpoint_sidecar(
+            checkpoint,
+            output_dir=self.output_dir,
+            contract=self.contract,
+        )
+        prune_owned_checkpoints(
+            self.output_dir,
+            keep_last=self.keep_last,
+            expected_contract=self.contract,
+            best_checkpoint=state.best_model_checkpoint,
+        )
+        return control
+
+
 def sanitize_config_for_save(config) -> None:
     """Remove runtime-only config values that cannot be serialized to JSON."""
     for key, value in list(vars(config).items()):
@@ -367,17 +485,54 @@ def main() -> None:
         raise ValueError("at least one loss weight must be positive")
 
     training_args.remove_unused_columns = False
-    processor = AutoProcessor.from_pretrained(
-        model_args.model_name_or_path, trust_remote_code=True
-    )
-    dtype = torch.bfloat16 if training_args.bf16 else (
-        torch.float16 if training_args.fp16 else torch.float32
+    guarded = bool(training_args.guarded_checkpoints and training_args.do_train)
+    guarded_resume_request: str | None = None
+    output_lock_handle = None
+    if guarded:
+        if bool(getattr(training_args, "save_only_model", False)):
+            raise ResumeContractError(
+                "Guarded checkpoints require optimizer, scheduler, and RNG state; "
+                "save_only_model is not supported"
+            )
+        if training_args.world_size != 1:
+            raise ResumeContractError(
+                "Guarded checkpoints support world_size=1 only; disable the opt-in for "
+                "upstream distributed full SFT"
+            )
+        if training_args.dataloader_num_workers != 0 or bool(
+            getattr(training_args, "dataloader_persistent_workers", False)
+        ):
+            raise ResumeContractError(
+                "Guarded resume requires dataloader_num_workers=0 because worker RNG and "
+                "iterator state are not persisted"
+            )
+        save_strategy = str(training_args.save_strategy).rsplit(".", maxsplit=1)[-1].casefold()
+        if save_strategy not in {"steps", "epoch", "no"}:
+            raise ResumeContractError(
+                "Guarded checkpoints support only steps, epoch, or no save strategy"
+            )
+        output_lock_handle = acquire_output_lock(training_args.output_dir)
+        guarded_resume_request = resolve_resume_request(
+            training_args.resume_from,
+            training_args.resume_mode,
+        )
+        if guarded_resume_request is None:
+            require_fresh_output(training_args.output_dir)
+    elif training_args.resume_from:
+        raise ResumeContractError("--resume_from requires --guarded_checkpoints true")
+
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
+    dtype = (
+        torch.bfloat16
+        if training_args.bf16
+        else (torch.float16 if training_args.fp16 else torch.float32)
     )
     model = AutoModel.from_pretrained(
         model_args.model_name_or_path,
         trust_remote_code=True,
         dtype=dtype,
     )
+    resolved_base_revision = getattr(model.config, "_commit_hash", None)
     if int(model_args.max_length) > int(model.config.max_seq_len):
         raise ValueError(
             f"--max_length={model_args.max_length} exceeds the model context "
@@ -388,9 +543,7 @@ def main() -> None:
         if model_args.freeze_slow_ar or model_args.freeze_fast_ar:
             raise ValueError("LoRA cannot be combined with complete AR branch freezing")
         target_modules = [
-            value.strip()
-            for value in model_args.lora_target_modules.split(",")
-            if value.strip()
+            value.strip() for value in model_args.lora_target_modules.split(",") if value.strip()
         ]
         if not target_modules:
             raise ValueError("--lora_target_modules must contain at least one module name")
@@ -431,9 +584,53 @@ def main() -> None:
         if data_args.eval_jsonl
         else None
     )
-    collator = partial(
-        collate_sft_examples, pad_token_id=int(model.config.pad_token_id)
-    )
+    collator = partial(collate_sft_examples, pad_token_id=int(model.config.pad_token_id))
+    callbacks: list[TrainerCallback] = []
+    if guarded:
+        requested_save_total_limit = training_args.save_total_limit
+        contract = build_contract(
+            output_dir=training_args.output_dir,
+            mode="lora" if model_args.use_lora else "full_sft",
+            base_model=model_args.model_name_or_path,
+            base_revision=resolved_base_revision,
+            input_files={
+                "train": _dataset_contract_files(train_dataset),
+                "evaluation": _dataset_contract_files(eval_dataset),
+            },
+            source_files=(
+                Path(__file__),
+                PROJECT_ROOT / "audio8_tts_data.py",
+                PROJECT_ROOT / "audio8_tts_resume.py",
+            ),
+            training_config=_training_contract_config(
+                model_args,
+                data_args,
+                training_args,
+            ),
+            runtime=_runtime_contract(training_args),
+        )
+        if guarded_resume_request is None:
+            resume = None
+        else:
+            resume = str(
+                validate_resume_checkpoint(
+                    guarded_resume_request,
+                    output_dir=training_args.output_dir,
+                    expected_contract=contract,
+                    trust_resume_state=training_args.trust_resume_state,
+                    world_size=training_args.world_size,
+                )
+            )
+        training_args.save_total_limit = None
+        callbacks.append(
+            GuardedCheckpointCallback(
+                output_dir=Path(training_args.output_dir).expanduser().resolve(strict=True),
+                contract=contract,
+                keep_last=requested_save_total_limit,
+            )
+        )
+    else:
+        resume = resolve_resume_checkpoint(training_args.output_dir, training_args.resume_mode)
     trainer = Audio8TTSTrainer(
         model=model,
         args=training_args,
@@ -442,9 +639,9 @@ def main() -> None:
         data_collator=collator,
         slow_loss_weight=training_args.slow_loss_weight,
         fast_loss_weight=training_args.fast_loss_weight,
+        callbacks=callbacks,
     )
 
-    resume = resolve_resume_checkpoint(training_args.output_dir, training_args.resume_mode)
     if training_args.do_train:
         result = trainer.train(resume_from_checkpoint=resume)
         trainer.log_metrics("train", result.metrics)
@@ -473,6 +670,8 @@ def main() -> None:
             trainer.save_model(training_args.export_dir)
         processor.save_pretrained(training_args.export_dir)
     LOGGER.info("Saved final checkpoint to %s", training_args.output_dir)
+    if output_lock_handle is not None:
+        output_lock_handle.close()
 
 
 if __name__ == "__main__":

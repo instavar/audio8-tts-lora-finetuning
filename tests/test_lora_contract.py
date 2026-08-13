@@ -4,7 +4,6 @@ import ast
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -18,8 +17,7 @@ class LoRAContractTests(unittest.TestCase):
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
         }
         self.assertTrue(
-            {"use_lora", "lora_r", "lora_alpha", "lora_dropout", "lora_target_modules"}
-            <= names
+            {"use_lora", "lora_r", "lora_alpha", "lora_dropout", "lora_target_modules"} <= names
         )
 
     def test_inference_exposes_adapter_argument(self) -> None:
@@ -32,6 +30,23 @@ class LoRAContractTests(unittest.TestCase):
         self.assertNotIn("torch.distributed", source)
         self.assertNotIn("--deepspeed", source)
         self.assertIn("--use_lora true", source)
+        self.assertIn("--guarded_checkpoints true", source)
+        self.assertIn('--resume_from "${RESUME_FROM:-}"', source)
+        self.assertIn('--trust_resume_state "${TRUST_RESUME_STATE:-false}"', source)
+
+    def test_trainer_sidecars_precede_ownership_safe_retention(self) -> None:
+        source = (ROOT / "audio8_tts_sft.py").read_text(encoding="utf-8")
+        write_index = source.index("write_checkpoint_sidecar(")
+        prune_index = source.index("prune_owned_checkpoints(", write_index)
+        self.assertLess(write_index, prune_index)
+        self.assertIn("assert_save_destination_absent", source)
+        self.assertIn("training_args.save_total_limit = None", source)
+        self.assertIn("world_size=1 only", source)
+
+    def test_full_sft_guarded_resume_is_explicitly_opt_in(self) -> None:
+        source = (ROOT / "audio8_tts_sft.sh").read_text(encoding="utf-8")
+        self.assertIn('--guarded_checkpoints "${GUARDED_CHECKPOINTS:-false}"', source)
+        self.assertIn('--resume_from "${RESUME_FROM:-}"', source)
 
     def test_batch_inference_groups_frozen_seeds(self) -> None:
         source = (ROOT / "audio8_tts_infer.py").read_text(encoding="utf-8")

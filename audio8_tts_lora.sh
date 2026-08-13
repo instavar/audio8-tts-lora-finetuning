@@ -43,6 +43,9 @@ fi
   --output_dir "${OUTPUT_DIR}" \
   --export_dir "${EXPORT_DIR}" \
   --overwrite_output_dir "${OVERWRITE_OUTPUT_DIR:-false}" \
+  --guarded_checkpoints true \
+  --resume_from "${RESUME_FROM:-}" \
+  --trust_resume_state "${TRUST_RESUME_STATE:-false}" \
   --use_lora true \
   --lora_r "${LORA_R:-8}" \
   --lora_alpha "${LORA_ALPHA:-16}" \
