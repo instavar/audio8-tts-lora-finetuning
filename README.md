@@ -18,6 +18,7 @@ and train only on recordings that you have the right to use.
 
 - rank, alpha, dropout and target-module controls through Hugging Face PEFT;
 - adapter-only checkpoints plus an optional merged export;
+- exact trusted single-process resume for new content-bound Trainer checkpoints;
 - adapter loading through `audio8_tts_infer.py --adapter`;
 - one direct Python launcher that avoids DeepSpeed and distributed assumptions;
 - CUDA and Apple Silicon smoke configurations;
@@ -69,6 +70,54 @@ bash audio8_tts_lora.sh
 The Transformers trainer selects MPS automatically when it is available. MPS
 does not support distributed training, which is why this launcher calls the
 trainer directly.
+
+### Guarded interruption resume
+
+The Instavar LoRA launcher writes guarded checkpoints by default. Start in an
+empty `OUTPUT_DIR`. To continue after an interruption, name the exact newest
+numbered checkpoint and acknowledge that Trainer optimizer and RNG files can
+contain pickle-backed state:
+
+```bash
+TRAIN_JSONL=prepared_data/train.jsonl \
+EVAL_JSONL=prepared_data/validation.jsonl \
+OUTPUT_DIR=outputs/audio8_tts_lora \
+RESUME_FROM=outputs/audio8_tts_lora/checkpoint-40 \
+TRUST_RESUME_STATE=true \
+bash audio8_tts_lora.sh
+```
+
+`auto`, `latest`, symlinked checkpoints, nested paths, older trajectory forks,
+missing sidecars, changed files, completed `max_steps` targets, and unowned
+sibling checkpoints fail before Trainer deserializes continuation state. Each
+sidecar binds the local base-model tree or immutable remote revision, prepared
+manifests and every code file used by the loaded dataset, trainer sources,
+effective model and training controls, package and device runtime, output path,
+filesystem device, and directory inode. The checkpoint manifest covers model or
+adapter weights, optimizer, scheduler, Trainer state, RNG state, optional scaler,
+and sharded model files.
+
+The output directory is protected by a nonblocking advisory lock. Checkpoint
+sidecars are published only after Trainer closes and hashes all continuation
+files. Trainer's numeric retention is disabled and replaced with direct-child,
+sidecar-ownership-validated pruning, including best-checkpoint preservation.
+The checkpoint directory itself is not atomically renamed, so interruption
+during a save can leave a sidecarless partial directory. That directory is
+deliberately not resumable and must be investigated or moved aside rather than
+adopted.
+
+Guarded resume is intentionally limited to `world_size=1` and
+`dataloader_num_workers=0`. The inherited full-SFT launcher keeps its upstream
+distributed behavior by default. A single-process full-SFT run can opt in with
+`GUARDED_CHECKPOINTS=true`, `RESUME_FROM=...`, and
+`TRUST_RESUME_STATE=true`. Distributed continuation needs rank-local sampler,
+worker, optimizer, scaler, and RNG evidence plus collective publication before
+it can make the same claim.
+
+This is a repository-declared and dependency-free contract. No Audio8 model,
+GPU, real Trainer interruption, numerical continuation comparison, or new audio
+ran for implementation revision
+`bfee17bcf2e03fd29637b7ac6b7125361bc2bd0f`.
 
 Reload the saved adapter without merging it:
 

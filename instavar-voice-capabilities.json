@@ -3,7 +3,7 @@
   "repository": {
     "slug": "instavar/audio8-tts-lora-finetuning",
     "url": "https://github.com/instavar/audio8-tts-lora-finetuning",
-    "evidence_revision": "769953ee6a1da6fde3a593969fe32e1b77e02254"
+    "evidence_revision": "bfee17bcf2e03fd29637b7ac6b7125361bc2bd0f"
   },
   "model": {
     "family": "Audio8 TTS",
@@ -48,9 +48,14 @@
               "level": "validated",
               "ref": "reports/cuda-fresh-clone-reproduction.md",
               "claim": "The CUDA run saved adapter state and exercised merge behavior."
+            },
+            {
+              "level": "repository_declared",
+              "ref": "README.md#guarded-interruption-resume",
+              "claim": "New LoRA checkpoints bind exact single-process Trainer continuation state and require explicit trusted resume."
             }
           ],
-          "boundary": "No selected immutable adapter artifact is retained for the current CUDA suite."
+          "boundary": "No selected immutable adapter artifact is retained for the current CUDA suite, and no real interrupted run validates the guarded resume contract."
         },
         "fresh_process_reload": {
           "status": "smoke_tested",
@@ -99,6 +104,11 @@
           "level": "repository_declared",
           "ref": "README.md#supervised-fine-tuning",
           "claim": "The inherited upstream repository documents a full-SFT path separately from the Instavar LoRA addition."
+        },
+        {
+          "level": "repository_declared",
+          "ref": "README.md#guarded-interruption-resume",
+          "claim": "Single-process full SFT can opt into the guarded checkpoint contract without claiming distributed resume."
         }
       ]
     }
@@ -255,6 +265,8 @@
     "A one-step MPS preflight does not establish training quality or long-session stability.",
     "The adapted CUDA suite is blocked because the prior adapter artifact is not available on either tested host.",
     "Future lifecycle packages have a repository-declared durable retention path, but it has not preserved a real adapter yet.",
+    "Guarded checkpoint resume has dependency-free contract coverage but no real interrupted GPU or MPS continuation comparison.",
+    "Distributed and multi-worker guarded continuation are rejected because rank-local state is not represented.",
     "Adapter-aware ONNX and SGLang exports have not passed conformance.",
     "No selected adapter has passed blinded long-form Singapore English listening."
   ]
