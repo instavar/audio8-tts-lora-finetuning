@@ -3,7 +3,7 @@
   "repository": {
     "slug": "instavar/audio8-tts-lora-finetuning",
     "url": "https://github.com/instavar/audio8-tts-lora-finetuning",
-    "evidence_revision": "384b51b6ab501899c118895da16b1489ffc3e88e"
+    "evidence_revision": "752c3019ce98ba7807d29da7e596bf6fcca938d0"
   },
   "model": {
     "family": "Audio8 TTS",
