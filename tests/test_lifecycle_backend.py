@@ -252,6 +252,56 @@ class LifecycleBackendTests(unittest.TestCase):
             self.assertTrue(result["atomic_hard_link"])
             self.assertEqual(list(root.iterdir()), [])
 
+    def test_persistence_probe_does_not_unlink_a_link_it_did_not_create(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (
+                patch.object(LIFECYCLE.os, "link", side_effect=FileExistsError("collision")),
+                patch.object(Path, "unlink", autospec=True) as unlink,
+                self.assertRaisesRegex(ValueError, "cannot publish an atomic package"),
+            ):
+                LIFECYCLE._probe_persistent_package_root(root)
+            unlinked = [call.args[0] for call in unlink.call_args_list]
+            self.assertEqual(len(unlinked), 1)
+            self.assertTrue(str(unlinked[0]).endswith(".partial"))
+
+    def test_package_root_is_bound_to_preflight_path_and_device(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            work = root / "work"
+            store = root / "store"
+            other = root / "other"
+            for path in (work, store, other):
+                path.mkdir()
+            environment = {
+                "INSTAVAR_VOICE_WORK_DIR": str(work),
+                "PERSISTED_PACKAGE_ROOT": str(store),
+            }
+            preflight = {
+                "persistent_package_root": str(store.resolve()),
+                "persistence_probe": {"device": store.stat().st_dev},
+            }
+            with (
+                patch.dict(os.environ, environment, clear=False),
+                patch.object(
+                    LIFECYCLE,
+                    "_persistent_package_root",
+                    wraps=lambda **_: store.resolve(),
+                ),
+            ):
+                self.assertEqual(
+                    LIFECYCLE._locked_persistent_package_root(preflight), store.resolve()
+                )
+                changed_path = {**preflight, "persistent_package_root": str(other.resolve())}
+                with self.assertRaisesRegex(ValueError, "changed after preflight"):
+                    LIFECYCLE._locked_persistent_package_root(changed_path)
+                changed_device = {
+                    **preflight,
+                    "persistence_probe": {"device": store.stat().st_dev + 1},
+                }
+                with self.assertRaisesRegex(ValueError, "changed after preflight"):
+                    LIFECYCLE._locked_persistent_package_root(changed_device)
+
     def test_train_isolates_output_and_archives_only_selected_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

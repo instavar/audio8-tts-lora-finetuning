@@ -69,6 +69,7 @@ def _fsync_directory(path: Path) -> None:
 def _probe_persistent_package_root(root: Path) -> dict[str, Any]:
     probe_path: Path | None = None
     linked_path: Path | None = None
+    linked_created = False
     try:
         with tempfile.NamedTemporaryFile(
             mode="wb",
@@ -83,6 +84,7 @@ def _probe_persistent_package_root(root: Path) -> dict[str, Any]:
             os.fsync(probe.fileno())
         linked_path = probe_path.with_suffix(".linked")
         os.link(probe_path, linked_path)
+        linked_created = True
         _fsync_directory(root)
         if linked_path.read_bytes() != probe_path.read_bytes():
             raise ValueError("persistent package root failed its atomic publication probe")
@@ -96,10 +98,19 @@ def _probe_persistent_package_root(root: Path) -> dict[str, Any]:
             f"PERSISTED_PACKAGE_ROOT cannot publish an atomic package: {error}"
         ) from error
     finally:
-        if linked_path is not None:
+        if linked_path is not None and linked_created:
             linked_path.unlink(missing_ok=True)
         if probe_path is not None:
             probe_path.unlink(missing_ok=True)
+
+
+def _locked_persistent_package_root(preflight: dict[str, Any]) -> Path:
+    root = _persistent_package_root()
+    recorded_root = preflight.get("persistent_package_root")
+    recorded_device = preflight.get("persistence_probe", {}).get("device")
+    if recorded_root != str(root) or recorded_device != root.stat().st_dev:
+        raise ValueError("PERSISTED_PACKAGE_ROOT changed after preflight")
+    return root
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -633,7 +644,7 @@ def _package() -> None:
     )
     package = work / "package" / "adapter-package.tar"
     _archive(staging, package, arcname="package")
-    receipt = _persist_package(package, _persistent_package_root())
+    receipt = _persist_package(package, _locked_persistent_package_root(preflight))
     _write_json(work / "package" / "persisted-package.json", receipt)
 
 
