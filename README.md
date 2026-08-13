@@ -96,8 +96,9 @@ The filename includes the package SHA-256, an existing object is accepted only
 when its bytes match, and `persisted-package.json` records the durable path,
 hash, size, and whether it was reused. Preflight verifies that the destination
 supports a reversible write, fsync, and atomic hard-link publication before
-training begins, then locks the resolved path and filesystem device for the
-package stage. Probe cleanup removes only names created by the current probe.
+training begins, then locks the resolved path, filesystem device, and directory
+inode for the package stage. Probe cleanup removes only names created by the
+current probe.
 
 Validate the recipe with evaluator revision
 `8feadf7bbda75abe1c305c63e362c41b86451cda`. Use an empty work directory
