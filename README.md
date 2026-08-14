@@ -518,7 +518,7 @@ Fish S2 Pro.
 
 ## Instavar Voice conformance
 
-[`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) distinguishes the validated PyTorch adapter paths from upstream ONNX and SGLang surfaces whose adapter-aware exports remain unverified. It also records the frozen objective and blinded-listening gates required before promotion. CI validates the manifest against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation).
+[`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) distinguishes the validated PyTorch adapter paths from upstream ONNX and SGLang surfaces whose adapter-aware exports remain unverified. It also records the frozen objective and blinded-listening gates required before promotion. CI validates the manifest against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation). New lifecycle runs should use evaluator commit `8c0fb66a592c73f801a289aabd242e03a6849115` or a deliberately reviewed successor so POSIX stage timeouts clean the complete process group. This does not retroactively upgrade earlier run evidence.
 
 The lifecycle fixes evaluation batch size at one so timing belongs to one
 sample, preserves invalid generations as explicit rows, and uses evaluator
