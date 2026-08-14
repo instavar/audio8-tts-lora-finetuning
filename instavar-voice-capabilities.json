@@ -69,9 +69,14 @@
               "level": "repository_declared",
               "ref": "reports/resume-evaluator-045-readiness-2026-08-14.md",
               "claim": "LoRA Trainer checkpoints expose independent model, optimizer, scheduler, trainer, and RNG state members required by evaluator 0.45."
+            },
+            {
+              "level": "smoke_tested",
+              "ref": "reports/resume-live-conditioned-gpu-2026-08-14.md",
+              "claim": "One live-conditioned two-update RTX 3090 Ti pair matched all five final resume roles byte-for-byte after an observed SIGTERM and new-process continuation."
             }
           ],
-          "boundary": "The selected inference adapter is retained, but no real interrupted run validates numerical guarded-resume equivalence."
+          "boundary": "The live result covers one serialized initial adapter, one row, one seed, world size 1, zero workers, and Torch 2.9; it does not establish general trainer semantics or distributed continuation."
         },
         "fresh_process_reload": {
           "status": "validated",
@@ -313,8 +318,7 @@
     "The validated CUDA slice has only two prompts, one seed, and one one-step adapter, with no matched Base candidate.",
     "The retained package has CUDA same-host restores and Mac second-host restores but no independent backup or clean-host restore.",
     "The exact MPS package probe covers two prompts and one seed; both outputs differ from CUDA and do not establish runtime equivalence.",
-    "Guarded checkpoint resume has dependency-free contract coverage but no real interrupted GPU or MPS continuation comparison.",
-    "Existing lifecycle runs predate evaluator 0.45 live-conditioning receipts; a fresh uninterrupted and interrupted-resumed pair is required for the stronger byte-exact claim tier.",
+    "The live-conditioned resume result covers only two sample-batched updates, one row, one seed, world size 1, zero workers, and Torch 2.9; mid-epoch, accumulated-gradient, stochastic-worker, distributed, longer-run, and MPS continuation remain open.",
     "Distributed and multi-worker guarded continuation are rejected because rank-local state is not represented.",
     "Adapter-aware ONNX and SGLang exports have not passed conformance.",
     "No selected adapter has passed blinded long-form Singapore English listening."

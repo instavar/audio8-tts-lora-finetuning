@@ -143,10 +143,15 @@ roles required by Instavar Voice evaluator 0.45:
 ambiguous model or RNG files and cross-role hardlinks. It is a role-mapping
 helper, not a replacement for guarded sidecar validation or evaluator hashing.
 
-This is instrumentation readiness, not resume equivalence. A fresh comparison
-must bind live Base, dataset-lineage, training-controls, and initial-state
-artifacts into schema 1.1 receipts before outcome inspection. Existing CUDA and
-MPS runs predate that receipt contract and are not upgraded. See
+The repository mapping was instrumentation readiness only. A later fresh RTX
+3090 Ti pair explicitly loaded one serialized initial adapter, observed a real
+`SIGTERM` after checkpoint 1, resumed in a new Torch 2.9 process, and matched
+model, optimizer, scheduler, trainer, and RNG files byte-for-byte at checkpoint
+2. Evaluator 0.45 reached `byte_exact_live_conditioned_artifact_set`. This is a
+two-update, one-row, world-size-one result and does not prove training
+semantics, quality, or broader continuation behavior. See
+[`reports/resume-live-conditioned-gpu-2026-08-14.md`](reports/resume-live-conditioned-gpu-2026-08-14.md)
+and the earlier
 [`reports/resume-evaluator-045-readiness-2026-08-14.md`](reports/resume-evaluator-045-readiness-2026-08-14.md).
 
 The output directory is protected by a nonblocking advisory lock. Checkpoint
@@ -166,10 +171,9 @@ distributed behavior by default. A single-process full-SFT run can opt in with
 worker, optimizer, scaler, and RNG evidence plus collective publication before
 it can make the same claim.
 
-This is a repository-declared and dependency-free contract. No Audio8 model,
-GPU, real Trainer interruption, numerical continuation comparison, or new audio
-ran for implementation revision
-`bfee17bcf2e03fd29637b7ac6b7125361bc2bd0f`.
+The implementation contract also has dependency-free coverage. The GPU result
+above is deliberately narrower than a general numerical-resume claim, and it
+generated no audio.
 
 Reload the saved adapter without merging it:
 
