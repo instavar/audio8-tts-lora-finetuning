@@ -150,18 +150,44 @@ inode for the package stage. Probe cleanup removes only names created by the
 current probe.
 
 Validate the recipe with evaluator revision
-`8feadf7bbda75abe1c305c63e362c41b86451cda`. Use an empty work directory
+`2812e200233804fde685c35ea1da1cbf9fe8ef4b`. Use an empty work directory
 outside the checkout and set `SELECTED_ADAPTER_NAME` to a real checkpoint child
 such as `checkpoint-20`. A CUDA pass proves only the selected CUDA environment;
 an MPS pass proves only the selected MPS environment. Neither is a perceptual
 quality or cross-runtime equivalence claim.
 
-The durable copy prevents a successful future lifecycle from depending only on
-an ephemeral run directory. It does not recover the historical adapter that is
-already missing, prove backup replication, or establish retention policy,
-access control, disaster recovery, or distribution rights. Treat the recorded
-path and hash as a handoff receipt and move it into managed storage under a
-separate reviewed policy when long-term retention is required.
+Packaging fails unless every objective metric required by the frozen plan has
+complete eligible-row coverage. The current required set includes ASR WER,
+speaker embedding similarity, invalid-output rate, duration, sample rate,
+silence, clipping, real-time factor, and peak memory. Objective completion is
+not a perceptual-quality claim.
+
+The durable copy prevents a successful lifecycle from depending only on an
+ephemeral run directory. Verify a retained package before adoption:
+
+```bash
+python scripts/verify_package_restore.py \
+  --package /path/to/audio8-adapter-package-sha256-<digest>.tar \
+  --expected-package-sha256 <digest> \
+  --base-model /path/to/audio8_tts_0_6B_preview \
+  --reference-audio /path/to/reference.wav \
+  --reference-transcript /path/to/reference.txt \
+  --reference-id target-speaker \
+  --candidate-id audio8-selected-adapter \
+  --prompt-id neutral-brief \
+  --output-dir /new/restore-directory \
+  --device cuda \
+  --dtype bfloat16
+```
+
+The verifier requires the expected outer digest, checks every listed package
+file and the complete external base-model tree, validates the frozen speaker
+reference inputs, reloads the adapter, and generates one selected plan row. It
+rejects an existing output directory. A same-host restore still does not prove
+backup replication, clean-host portability, retention policy, access control,
+disaster recovery, or distribution rights. Treat the receipt as a handoff
+record and move the package into managed storage under a separate reviewed
+policy when long-term retention is required.
 
 ## Promotion gate
 
@@ -208,10 +234,13 @@ experiment, but it is enough to make generation checks mandatory for this
 workflow.
 
 The [2026-08-12 CUDA runtime report](reports/runtime-smoke-2026-08-12.md)
-records a frozen-prompt base-model smoke with output and model hashes, WER,
-cold-start time, and peak GPU memory. No Audio8 adapter was available on that
-host, so the report deliberately does not promote CUDA adapter support beyond
-the existing bounded training evidence.
+records the earlier base-model-only state. The later
+[2026-08-14 bounded CUDA lifecycle](reports/cuda-bounded-lifecycle-2026-08-14.md)
+retains a current adapter, completes every objective field required by its
+two-row plan, publishes a content-addressed package, and reproduces one frozen
+waveform in two new same-host restore directories. It does not include a matched
+Base candidate or blind listening, so it establishes engineering lifecycle
+completion rather than adaptation benefit or perceptual quality.
 
 ## Rights and attribution
 
@@ -484,7 +513,7 @@ Fish S2 Pro.
 
 The lifecycle fixes evaluation batch size at one so timing belongs to one
 sample, preserves invalid generations as explicit rows, and uses evaluator
-revision `8feadf7bbda75abe1c305c63e362c41b86451cda` to bind timing, duration,
+revision `2812e200233804fde685c35ea1da1cbf9fe8ef4b` to bind timing, duration,
 and peak-memory fields to the frozen plan and live output audio. CUDA peak
 allocation is measured by PyTorch. MPS timing explicitly synchronizes the
 device, but non-CUDA paths omit peak memory because this runner has no equivalent
