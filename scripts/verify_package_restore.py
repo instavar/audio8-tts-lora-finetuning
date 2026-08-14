@@ -137,6 +137,7 @@ def _select_row(plan: dict[str, Any], candidate_id: str, prompt_id: str) -> dict
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--package", type=Path, required=True)
+    parser.add_argument("--expected-package-sha256", required=True)
     parser.add_argument("--base-model", type=Path, required=True)
     parser.add_argument("--reference-audio", type=Path, required=True)
     parser.add_argument("--reference-transcript", type=Path, required=True)
@@ -168,6 +169,14 @@ def main() -> int:
         valid = path.is_dir() if directory else path.is_file()
         if path.is_symlink() or not valid:
             raise ValueError(f"{name} is missing or unsafe: {path}")
+    if (
+        len(args.expected_package_sha256) != 64
+        or any(c not in "0123456789abcdef" for c in args.expected_package_sha256)
+    ):
+        raise ValueError("expected package SHA-256 must be one lowercase digest")
+    package_sha256 = _sha256(package)
+    if package_sha256 != args.expected_package_sha256:
+        raise ValueError("package does not match the expected SHA-256")
     if args.output_dir.exists() or args.output_dir.is_symlink():
         raise ValueError("output directory must not already exist")
     package_root = _safe_extract(package, args.output_dir / "outer", prefix="package")
@@ -228,7 +237,7 @@ def main() -> int:
     receipt = {
         "schema_version": "1.0.0",
         "status": "passed",
-        "package_sha256": _sha256(package),
+        "package_sha256": package_sha256,
         "package_manifest_sha256": _sha256(package_root / "package-manifest.json"),
         "base_model_sha256": base_identity["sha256"],
         "selected_adapter_sha256": _sha256(package_root / "selected-adapter.tar"),

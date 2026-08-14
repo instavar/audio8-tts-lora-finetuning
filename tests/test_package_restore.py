@@ -21,6 +21,11 @@ SPEC.loader.exec_module(RESTORE)
 
 
 class PackageRestoreTests(unittest.TestCase):
+    def test_restore_cli_requires_expected_package_identity(self) -> None:
+        source = (ROOT / "scripts" / "verify_package_restore.py").read_text()
+        self.assertIn('parser.add_argument("--expected-package-sha256", required=True)', source)
+        self.assertIn("package does not match the expected SHA-256", source)
+
     def test_safe_extract_accepts_regular_members_and_rejects_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
