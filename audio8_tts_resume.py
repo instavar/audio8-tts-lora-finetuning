@@ -85,6 +85,28 @@ def tree_identity(path: str | Path) -> dict[str, Any]:
     }
 
 
+def initial_adapter_contract_files(value: str | Path) -> list[Path]:
+    root = Path(value).expanduser()
+    if root.is_symlink():
+        raise ResumeContractError("Initial adapter directory must not be a symlink")
+    root = root.resolve(strict=True)
+    if not root.is_dir():
+        raise ResumeContractError("Initial adapter path must be a directory")
+    files: list[Path] = []
+    for item in sorted(root.rglob("*")):
+        if item.is_symlink():
+            raise ResumeContractError(f"Initial adapter tree rejects symlinks: {item}")
+        if item.is_file():
+            files.append(item)
+    names = {path.relative_to(root).as_posix() for path in files}
+    model_names = names & {"adapter_model.safetensors", "adapter_model.bin"}
+    if "adapter_config.json" not in names or len(model_names) != 1:
+        raise ResumeContractError(
+            "Initial adapter needs adapter_config.json and exactly one adapter model file"
+        )
+    return files
+
+
 def model_identity(model_name_or_path: str | Path, resolved_revision: str | None) -> dict[str, Any]:
     raw = Path(model_name_or_path).expanduser()
     if raw.exists() or raw.is_symlink():

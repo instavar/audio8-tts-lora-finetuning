@@ -14,6 +14,7 @@ from audio8_tts_resume import (
     build_contract,
     checkpoint_manifest,
     evaluator_lora_artifact_paths,
+    initial_adapter_contract_files,
     model_identity,
     prune_owned_checkpoints,
     require_fresh_output,
@@ -25,6 +26,38 @@ from audio8_tts_resume import (
 
 
 class ResumeContractTests(unittest.TestCase):
+    def test_initial_adapter_tree_requires_one_safe_model_file(self) -> None:
+        adapter = self.root / "initial-adapter"
+        adapter.mkdir()
+        (adapter / "adapter_config.json").write_text("{}\n", encoding="utf-8")
+        model = adapter / "adapter_model.safetensors"
+        model.write_bytes(b"initial-adapter")
+        receipt = adapter / "initial-adapter-receipt.json"
+        receipt.write_text("{}\n", encoding="utf-8")
+
+        self.assertEqual(
+            initial_adapter_contract_files(adapter),
+            [
+                adapter.resolve() / "adapter_config.json",
+                adapter.resolve() / model.name,
+                adapter.resolve() / receipt.name,
+            ],
+        )
+        (adapter / "adapter_model.bin").write_bytes(b"ambiguous")
+        with self.assertRaisesRegex(ResumeContractError, "exactly one"):
+            initial_adapter_contract_files(adapter)
+
+    def test_initial_adapter_tree_rejects_symlinks(self) -> None:
+        adapter = self.root / "initial-adapter"
+        adapter.mkdir()
+        (adapter / "adapter_config.json").write_text("{}\n", encoding="utf-8")
+        (adapter / "adapter_model.safetensors").write_bytes(b"initial-adapter")
+        outside = self.root / "outside"
+        outside.write_bytes(b"outside")
+        (adapter / "unsafe").symlink_to(outside)
+        with self.assertRaisesRegex(ResumeContractError, "rejects symlinks"):
+            initial_adapter_contract_files(adapter)
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)

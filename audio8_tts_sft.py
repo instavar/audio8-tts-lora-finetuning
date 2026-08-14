@@ -20,7 +20,7 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
-from peft import LoraConfig, TaskType, get_peft_model
+from peft import LoraConfig, PeftModel, TaskType, get_peft_model
 from torch.utils.checkpoint import checkpoint
 from torch.utils.data import Dataset
 from transformers import (
@@ -30,6 +30,7 @@ from transformers import (
     Trainer,
     TrainerCallback,
     TrainingArguments,
+    set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
 
@@ -47,6 +48,7 @@ from audio8_tts_resume import (
     acquire_output_lock,
     assert_save_destination_absent,
     build_contract,
+    initial_adapter_contract_files,
     prune_owned_checkpoints,
     require_fresh_output,
     resolve_resume_request,
@@ -68,6 +70,10 @@ class ModelArguments:
     freeze_slow_ar: bool = field(default=False)
     freeze_fast_ar: bool = field(default=False)
     use_lora: bool = field(default=False)
+    initial_adapter_dir: str | None = field(
+        default=None,
+        metadata={"help": "Optional immutable initial LoRA adapter to load before training."},
+    )
     lora_r: int = field(default=8)
     lora_alpha: int = field(default=16)
     lora_dropout: float = field(default=0.0)
@@ -380,6 +386,27 @@ def _dataset_contract_files(dataset: Audio8TTSDataset | None) -> list[Path]:
     return paths
 
 
+def _validate_loaded_lora_config(model: PeftModel, model_args: ModelArguments) -> None:
+    config = model.peft_config.get("default")
+    if config is None:
+        raise ResumeContractError("Initial adapter did not load a default PEFT configuration")
+    requested_targets = {
+        value.strip() for value in model_args.lora_target_modules.split(",") if value.strip()
+    }
+    actual_targets = config.target_modules
+    if isinstance(actual_targets, str):
+        actual_target_set = {actual_targets}
+    else:
+        actual_target_set = set(actual_targets or ())
+    if (
+        int(config.r) != int(model_args.lora_r)
+        or int(config.lora_alpha) != int(model_args.lora_alpha)
+        or not math.isclose(float(config.lora_dropout), float(model_args.lora_dropout))
+        or actual_target_set != requested_targets
+    ):
+        raise ResumeContractError("Initial adapter LoRA configuration does not match the request")
+
+
 def _training_contract_config(
     model_args: ModelArguments,
     data_args: DataArguments,
@@ -521,6 +548,12 @@ def main() -> None:
     elif training_args.resume_from:
         raise ResumeContractError("--resume_from requires --guarded_checkpoints true")
 
+    initial_adapter_files = (
+        initial_adapter_contract_files(model_args.initial_adapter_dir)
+        if model_args.initial_adapter_dir
+        else []
+    )
+    set_seed(training_args.seed)
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
     dtype = (
         torch.bfloat16
@@ -547,17 +580,25 @@ def main() -> None:
         ]
         if not target_modules:
             raise ValueError("--lora_target_modules must contain at least one module name")
-        model = get_peft_model(
-            model,
-            LoraConfig(
-                r=model_args.lora_r,
-                lora_alpha=model_args.lora_alpha,
-                lora_dropout=model_args.lora_dropout,
-                target_modules=target_modules,
-                bias="none",
-                task_type=TaskType.CAUSAL_LM,
-            ),
-        )
+        if model_args.initial_adapter_dir:
+            model = PeftModel.from_pretrained(
+                model,
+                str(Path(model_args.initial_adapter_dir).expanduser().resolve(strict=True)),
+                is_trainable=True,
+            )
+            _validate_loaded_lora_config(model, model_args)
+        else:
+            model = get_peft_model(
+                model,
+                LoraConfig(
+                    r=model_args.lora_r,
+                    lora_alpha=model_args.lora_alpha,
+                    lora_dropout=model_args.lora_dropout,
+                    target_modules=target_modules,
+                    bias="none",
+                    task_type=TaskType.CAUSAL_LM,
+                ),
+            )
         model.print_trainable_parameters()
     else:
         set_trainable_modules(
@@ -596,6 +637,7 @@ def main() -> None:
             input_files={
                 "train": _dataset_contract_files(train_dataset),
                 "evaluation": _dataset_contract_files(eval_dataset),
+                "initial_adapter": initial_adapter_files,
             },
             source_files=(
                 Path(__file__),

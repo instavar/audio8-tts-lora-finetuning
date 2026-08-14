@@ -47,6 +47,7 @@ fi
   --resume_from "${RESUME_FROM:-}" \
   --trust_resume_state "${TRUST_RESUME_STATE:-false}" \
   --use_lora true \
+  --initial_adapter_dir "${INITIAL_ADAPTER_DIR:-}" \
   --lora_r "${LORA_R:-8}" \
   --lora_alpha "${LORA_ALPHA:-16}" \
   --lora_dropout "${LORA_DROPOUT:-0}" \

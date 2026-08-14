@@ -78,10 +78,35 @@ empty `OUTPUT_DIR`. To continue after an interruption, name the exact newest
 numbered checkpoint and acknowledge that Trainer optimizer and RNG files can
 contain pickle-backed state:
 
+For a paired evaluator 0.45 comparison, first publish one immutable initial
+adapter, then pass the same directory to every fresh and resumed process:
+
+```bash
+python scripts/create_initial_lora.py \
+  --model /absolute/path/to/audio8_tts_0_6B_preview \
+  --output /absolute/path/to/evidence/initial-adapter \
+  --producer-revision "$(git rev-parse HEAD)" \
+  --seed 42
+
+INITIAL_ADAPTER_DIR=/absolute/path/to/evidence/initial-adapter \
+TRAIN_JSONL=prepared_data/train.jsonl \
+EVAL_JSONL=prepared_data/validation.jsonl \
+OUTPUT_DIR=outputs/audio8_tts_lora \
+bash audio8_tts_lora.sh
+```
+
+The initializer refuses overwrite, serializes the seeded adapter, writes a
+payload receipt, and publishes the directory by atomic rename. The trainer
+loads those exact bytes with PEFT before training and hashes every file into
+the guarded run contract. Without `INITIAL_ADAPTER_DIR`, the legacy seeded
+in-process LoRA initialization remains available but is weaker evaluator
+conditioning evidence.
+
 ```bash
 TRAIN_JSONL=prepared_data/train.jsonl \
 EVAL_JSONL=prepared_data/validation.jsonl \
 OUTPUT_DIR=outputs/audio8_tts_lora \
+INITIAL_ADAPTER_DIR=/absolute/path/to/evidence/initial-adapter \
 RESUME_FROM=outputs/audio8_tts_lora/checkpoint-40 \
 TRUST_RESUME_STATE=true \
 bash audio8_tts_lora.sh
