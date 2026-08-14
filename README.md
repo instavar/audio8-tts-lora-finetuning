@@ -194,7 +194,9 @@ reuses the CUDA package, complete base-model tree identity, reference inputs,
 candidate, prompt, and seed on a 16 GB M2 Pro. Two fresh MPS restores produced
 the same WAV byte-for-byte. The MPS WAV differs from CUDA in duration and level
 diagnostics, so this validates package portability and tested-MPS repeatability,
-not cross-runtime output equivalence.
+not cross-runtime output equivalence. The second frozen names-and-numbers row
+also restored on MPS; its WER was 0.2333 versus 0.1333 on CUDA, while its ECAPA
+proxy increased. Neither proxy movement establishes a quality winner.
 
 ## Promotion gate
 

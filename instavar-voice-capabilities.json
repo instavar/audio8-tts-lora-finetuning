@@ -191,7 +191,7 @@
         "status": "validated",
         "clean_checkout": true,
         "fresh_process": true,
-        "prompt_count": 1,
+        "prompt_count": 2,
         "seed_count": 1,
         "report": "reports/mps-package-restore-2026-08-14.md"
       },
@@ -204,7 +204,7 @@
         {
           "level": "validated",
           "ref": "reports/mps-package-restore-2026-08-14.md",
-          "claim": "The exact CUDA package restored twice in fresh MPS processes with byte-identical MPS output and bound one-row ASR and ECAPA diagnostics."
+          "claim": "The exact CUDA package restored both frozen rows on MPS, with two byte-identical neutral restores and bound two-row ASR and ECAPA diagnostics."
         }
       ]
     },
@@ -307,7 +307,7 @@
     "A one-step MPS preflight does not establish training quality or long-session stability.",
     "The validated CUDA slice has only two prompts, one seed, and one one-step adapter, with no matched Base candidate.",
     "The retained package has CUDA same-host restores and Mac second-host restores but no independent backup or clean-host restore.",
-    "The exact MPS package probe covers one prompt and one seed; its output differs from CUDA and does not establish runtime equivalence.",
+    "The exact MPS package probe covers two prompts and one seed; both outputs differ from CUDA and do not establish runtime equivalence.",
     "Guarded checkpoint resume has dependency-free contract coverage but no real interrupted GPU or MPS continuation comparison.",
     "Distributed and multi-worker guarded continuation are rejected because rank-local state is not represented.",
     "Adapter-aware ONNX and SGLang exports have not passed conformance.",

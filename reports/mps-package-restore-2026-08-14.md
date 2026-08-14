@@ -5,9 +5,10 @@ Date: 2026-08-14, Asia/Singapore
 ## Scope
 
 This probe moved the exact package produced by the bounded CUDA lifecycle to a
-16 GB Apple M2 Pro and restored one frozen neutral row twice through PyTorch
-MPS. It reused the packaged candidate, prompt, seed, adapter archive, complete
-base-model tree identity, reference audio, and reference transcript.
+16 GB Apple M2 Pro and restored the frozen neutral row twice plus the frozen
+names-and-numbers row once through PyTorch MPS. It reused the packaged
+candidate, prompts, seed, adapter archive, complete base-model tree identity,
+reference audio, and reference transcript.
 
 The executed restore revision was
 `3b9630fe474c3756ad46a4f4720b531d6277125f`. Both hosted workflows passed at
@@ -113,6 +114,36 @@ like the target speaker. The waveform and deterministic audio differences mean
 this probe does not establish cross-runtime equivalence. Two identical MPS runs
 establish only exact repeatability in the tested MPS environment.
 
+## Second frozen MPS row
+
+The names-and-numbers row also restored successfully as a valid 44.1 kHz WAV:
+
+- WAV SHA-256:
+  `c26b88f39c87e04b230b1b4a6f895c7e769bf3004aa46f420db546bf3b01039b`
+- duration: 13.7927 seconds
+- item generation time: 53.09 seconds
+- total wall time: 59.16 seconds
+- maximum process RSS: 4,064,018,432 bytes
+- process swaps: 0
+- objective-observation SHA-256:
+  `2ef8092a130a701f840d84af376b6ac4974e44b3ea99b88f27bec1775aa67a3b`
+
+| Diagnostic | CUDA BF16 | MPS float32 | MPS minus CUDA |
+| --- | ---: | ---: | ---: |
+| duration | 14.1177 s | 13.7927 s | -0.3251 s |
+| peak amplitude | 0.6406 | 0.6157 | -0.0250 |
+| RMS amplitude | 0.1008 | 0.0833 | -0.0175 |
+| silence fraction | 0.3526 | 0.4151 | +0.0625 |
+| clipping fraction | 0.0 | 0.0 | 0.0 |
+| faster-whisper WER | 0.1333 | 0.2333 | +0.1000 |
+| SpeechBrain ECAPA similarity | 0.7165 | 0.7782 | +0.0617 |
+
+The MPS ASR hypothesis rendered `Sze Min` as `seimin` and flattened punctuation
+and currency formatting. WER worsened while ECAPA increased. These opposing
+proxy movements do not identify a quality winner. They make the row-level
+runtime interaction visible and reinforce the need for criterion-scoped blind
+listening.
+
 ## Evidence retention and limits
 
 The local probe root is
@@ -124,14 +155,12 @@ artifacts are retained at
 
 The package was copied from the CUDA host to the Mac, but both copies remain
 operator-local. This is second-host portability evidence, not an independent
-backup or disaster-recovery drill. No blind listening was performed. Only one
-prompt and one seed ran on MPS, and the plan's CUDA peak-memory requirement is
+backup or disaster-recovery drill. No blind listening was performed. Two
+prompts and one seed ran on MPS, and the plan's CUDA peak-memory requirement is
 not available from the MPS runner.
 
 ## Remaining work
 
-- Run the frozen names-and-numbers row on MPS before claiming two-row runtime
-  coverage.
 - Define a plan-valid MPS memory metric or explicitly use a cross-runtime plan
   that does not require CUDA peak allocation.
 - Run matched Base and LoRA candidates on both runtimes before making adaptation
