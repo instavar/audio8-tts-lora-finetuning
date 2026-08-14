@@ -1,0 +1,32 @@
+{
+  "assignment_plan_sha256": "3c5bf8c63a08cf978e4a9b32301ac8f43013a85d6758f242d9ae72c37244bf3f",
+  "assignments": [
+    {
+      "prompt_id": "names-numbers",
+      "reference_ids": [
+        "female01"
+      ],
+      "seed": 42
+    },
+    {
+      "prompt_id": "neutral-brief",
+      "reference_ids": [
+        "female01"
+      ],
+      "seed": 42
+    }
+  ],
+  "generation_plan_sha256": "8eab5ac82cb14066f279596f99dd41b91441f24aabcf8510c9a6c1359bf5915a",
+  "plan_id": "audio8-lora-bounded-reference-20260814",
+  "reference_aggregation": "mean_cosine_similarity_v1",
+  "reference_catalog_sha256": "4838c3de1453c3bce73ea5bd0c1d84c290fe37b2097dfa44ad718058c654d6ff",
+  "schema_version": "1.0.0",
+  "selection_policy": {
+    "policy_id": "single-authorized-reference",
+    "rationale": "The sole authorized target-speaker reference is assigned symmetrically to every frozen row before generation or scoring.",
+    "selection_stage": "before_candidate_generation_or_scoring",
+    "stratification_dimensions": [
+      "passage"
+    ]
+  }
+}

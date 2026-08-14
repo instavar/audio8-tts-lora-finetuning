@@ -16,6 +16,18 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).parents[1]
 UPSTREAM_REVISION = "3346560df718d33096ac2fef7e5c7984ee5248e6"
+OBJECTIVE_METRIC_ALIASES = {"duration_seconds": "audio_duration_seconds"}
+SUPPORTED_OBJECTIVE_METRICS = {
+    "asr_word_error_rate",
+    "speaker_embedding_similarity",
+    "invalid_output_rate",
+    "duration_seconds",
+    "sample_rate_hz",
+    "silence_fraction",
+    "clipping_fraction",
+    "real_time_factor",
+    "peak_memory_bytes",
+}
 
 
 def _path(name: str, *, directory: bool = False) -> Path:
@@ -34,6 +46,20 @@ def _path(name: str, *, directory: bool = False) -> Path:
 
 def _work() -> Path:
     return _path("INSTAVAR_VOICE_WORK_DIR", directory=True)
+
+
+def _required_text(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise ValueError(f"{name} is required")
+    return value
+
+
+def _executable(name: str) -> Path:
+    path = Path(_required_text(name)).expanduser()
+    if not path.exists() or not path.is_file() or not os.access(path, os.X_OK):
+        raise FileNotFoundError(f"{name} is not an executable file: {path}")
+    return path
 
 
 def _persistent_package_root(*, protect_inputs: bool = True) -> Path:
@@ -163,10 +189,11 @@ def _run(
     *,
     environment: dict[str, str] | None = None,
     capture: bool = False,
+    cwd: Path = REPO_ROOT,
 ) -> str:
     result = subprocess.run(
         command,
-        cwd=REPO_ROOT,
+        cwd=cwd,
         env=environment,
         capture_output=capture,
         text=capture,
@@ -434,6 +461,155 @@ def _training_settings() -> dict[str, str]:
     return {name: os.environ.get(name, value) for name, value in defaults.items()}
 
 
+def _required_objective_metrics(plan: dict[str, Any]) -> list[str]:
+    required = plan.get("required_objective_metrics")
+    if not isinstance(required, list) or not required:
+        raise ValueError(
+            "GENERATION_PLAN must declare non-empty required_objective_metrics"
+        )
+    if any(not isinstance(name, str) for name in required):
+        raise TypeError("required_objective_metrics entries must be strings")
+    if len(required) != len(set(required)):
+        raise ValueError("required_objective_metrics entries must be unique")
+    unsupported = sorted(set(required) - SUPPORTED_OBJECTIVE_METRICS)
+    if unsupported:
+        raise ValueError(
+            "unsupported required_objective_metrics: " + ", ".join(unsupported)
+        )
+    return required
+
+
+def _objective_evaluation_preflight(plan: dict[str, Any]) -> dict[str, Any]:
+    required = _required_objective_metrics(plan)
+    evaluator = _path("INSTAVAR_VOICE_EVALUATOR_DIR", directory=True)
+    if not (evaluator / "main.py").is_file():
+        raise FileNotFoundError("INSTAVAR_VOICE_EVALUATOR_DIR is missing main.py")
+    report: dict[str, Any] = {
+        "required_metrics": required,
+        "evaluator_dir": str(evaluator),
+        "evaluator_revision": _run(
+            ["git", "rev-parse", "HEAD"], capture=True, cwd=evaluator
+        ),
+    }
+    if "asr_word_error_rate" in required:
+        model = _path("FASTER_WHISPER_MODEL_DIR", directory=True)
+        python = _executable("FASTER_WHISPER_PYTHON")
+        revision = _required_text("FASTER_WHISPER_MODEL_REVISION")
+        if len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
+            raise ValueError("FASTER_WHISPER_MODEL_REVISION must be a lowercase commit hash")
+        report["asr"] = {
+            "python": str(python),
+            "model_dir": str(model),
+            "model_name": _required_text("FASTER_WHISPER_MODEL_NAME"),
+            "model_revision": revision,
+            "device": _required_text("FASTER_WHISPER_DEVICE"),
+            "compute_type": _required_text("FASTER_WHISPER_COMPUTE_TYPE"),
+        }
+    if "speaker_embedding_similarity" in required:
+        model = _path("SPEECHBRAIN_MODEL_DIR", directory=True)
+        python = _executable("SPEECHBRAIN_PYTHON")
+        revision = _required_text("SPEECHBRAIN_MODEL_REVISION")
+        if len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
+            raise ValueError("SPEECHBRAIN_MODEL_REVISION must be a lowercase commit hash")
+        reference_id = _required_text("SPEAKER_REFERENCE_ID")
+        if "=" in reference_id:
+            raise ValueError("SPEAKER_REFERENCE_ID must not contain equals")
+        catalog_path = _path("SPEAKER_REFERENCE_CATALOG")
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        catalog_id = _required_text("SPEAKER_REFERENCE_CATALOG_ID")
+        if catalog.get("catalog_id") != catalog_id:
+            raise ValueError(
+                "SPEAKER_REFERENCE_CATALOG_ID does not match SPEAKER_REFERENCE_CATALOG"
+            )
+        if reference_id not in {
+            row.get("reference_id") for row in catalog.get("references", [])
+        }:
+            raise ValueError("SPEAKER_REFERENCE_ID is absent from the frozen catalog")
+        report["speaker"] = {
+            "python": str(python),
+            "model_dir": str(model),
+            "model_revision": revision,
+            "catalog_id": catalog_id,
+            "catalog": str(catalog_path),
+            "reference_id": reference_id,
+            "reference_transcript": str(_path("SPEAKER_REFERENCE_TRANSCRIPT")),
+            "reference_plan": str(_path("SPEAKER_REFERENCE_PLAN")),
+            "device": _required_text("SPEECHBRAIN_DEVICE"),
+        }
+        if _required_text("SPEECHBRAIN_TRUST_MODEL_CHECKPOINTS") != "true":
+            raise ValueError("SPEECHBRAIN_TRUST_MODEL_CHECKPOINTS must equal true")
+    return report
+
+
+def _assert_objective_coverage(
+    score: dict[str, Any],
+    plan: dict[str, Any],
+    candidate_id: str,
+) -> None:
+    required = _required_objective_metrics(plan)
+    candidates = [
+        row for row in score.get("candidates", []) if row.get("candidate_id") == candidate_id
+    ]
+    if len(candidates) != 1:
+        raise ValueError("objective score must contain exactly one selected candidate")
+    candidate = candidates[0]
+    planned_rows = [
+        row for row in plan.get("samples", []) if row.get("candidate_id") == candidate_id
+    ]
+    if candidate.get("sample_count") != len(planned_rows):
+        raise ValueError("objective score sample count does not match the generation plan")
+    coverage = candidate.get("metric_coverage", {})
+    missing: list[str] = []
+    for metric in required:
+        if metric == "invalid_output_rate":
+            value = candidate.get(metric)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                missing.append(metric)
+            continue
+        coverage_name = OBJECTIVE_METRIC_ALIASES.get(metric, metric)
+        metric_coverage = coverage.get(coverage_name, {})
+        if (
+            metric_coverage.get("observed") != len(planned_rows)
+            or metric_coverage.get("rate") != 1.0
+        ):
+            missing.append(metric)
+    if missing:
+        raise ValueError(
+            "objective evaluation lacks complete required metric coverage: "
+            + ", ".join(missing)
+        )
+
+
+def _preflight_report() -> dict[str, Any]:
+    path = _work() / "preflight" / "preflight.json"
+    if not path.is_file():
+        raise FileNotFoundError("preflight report is missing")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _reference_text_sha256() -> str:
+    return hashlib.sha256(_required_text("REFERENCE_TEXT").encode("utf-8")).hexdigest()
+
+
+def _verify_locked_inputs(*, verify_base_model: bool) -> dict[str, Any]:
+    report = _preflight_report()
+    if not _git_clean() or _git_head() != report["companion_revision"]:
+        raise ValueError("Audio8 checkout changed after preflight")
+    if verify_base_model:
+        current = _tree_manifest(_path("BASE_MODEL_DIR", directory=True))
+        if current["sha256"] != report["base_model"]["sha256"]:
+            raise ValueError("BASE_MODEL_DIR changed after preflight")
+    if _sha256(_path("GENERATION_PLAN")) != report["generation_plan_sha256"]:
+        raise ValueError("GENERATION_PLAN changed after preflight")
+    if _sha256(_path("REFERENCE_AUDIO")) != report["reference_audio_sha256"]:
+        raise ValueError("REFERENCE_AUDIO changed after preflight")
+    if _reference_text_sha256() != report["reference_text_sha256"]:
+        raise ValueError("REFERENCE_TEXT changed after preflight")
+    if _verify_dataset_lineage() != report["dataset_lineage"]:
+        raise ValueError("DATASET_LINEAGE or a bound dataset input changed after preflight")
+    return report
+
+
 def _preflight() -> None:
     from instavar_voice_lab.corpus import audit_corpus
 
@@ -476,6 +652,14 @@ def _preflight() -> None:
         raise ValueError(
             "GENERATION_PLAN must be schema 1.0.0 or 1.1.0 and contain CANDIDATE_ID rows"
         )
+    objective_evaluation = _objective_evaluation_preflight(plan)
+    if (
+        experiment.get("evaluation_suite", {}).get("revision")
+        != objective_evaluation["evaluator_revision"]
+    ):
+        raise ValueError(
+            "experiment evaluation_suite.revision does not match the evaluator checkout"
+        )
     selected = _safe_name(os.environ["SELECTED_ADAPTER_NAME"])
     persistent_package_root = _persistent_package_root()
     persistence_probe = _probe_persistent_package_root(persistent_package_root)
@@ -499,14 +683,18 @@ def _preflight() -> None:
                 "validation": validation_prepared,
             },
             "generation_rows": len(rows),
+            "generation_plan_sha256": _sha256(_path("GENERATION_PLAN")),
+            "reference_audio_sha256": _sha256(_path("REFERENCE_AUDIO")),
+            "reference_text_sha256": _reference_text_sha256(),
             "training_settings": _training_settings(),
             "dataset_lineage": lineage,
+            "objective_evaluation": objective_evaluation,
         },
     )
 
 
 def _train() -> None:
-    _verify_dataset_lineage()
+    _verify_locked_inputs(verify_base_model=True)
     work = _work()
     output = work / "train" / "output"
     environment = os.environ.copy()
@@ -535,6 +723,7 @@ def _train() -> None:
 
 def _infer() -> None:
     work = _work()
+    _verify_locked_inputs(verify_base_model=True)
     adapter = _extract(work / "train" / "selected-adapter.tar", work / "infer" / "reload")
     output = work / "infer" / "candidate.wav"
     command = [
@@ -566,6 +755,7 @@ def _infer() -> None:
 
 def _evaluate() -> None:
     work = _work()
+    _verify_locked_inputs(verify_base_model=True)
     adapter = _extract(work / "train" / "selected-adapter.tar", work / "evaluate" / "reload")
     output = work / "evaluate" / "output"
     command = [
@@ -595,7 +785,7 @@ def _evaluate() -> None:
     _run(command)
     raw_observations = output / "generation-observations.json"
     receipt = output / "generation-attempt-receipt.json"
-    bound_observations = output / "objective-observations.json"
+    runtime_observations = output / "runtime-bound-observations.json"
     plan = _path("GENERATION_PLAN")
     producer_revision = _git_head()
     _run([
@@ -607,13 +797,92 @@ def _evaluate() -> None:
     _run([
         sys.executable, "-m", "instavar_voice_lab.cli", "apply-generation-attempt-receipt",
         str(raw_observations), str(receipt), "--plan", str(plan), "--audio-base-dir", str(output),
-        "--output", str(bound_observations),
+        "--output", str(runtime_observations),
     ])
+    evaluator = _path("INSTAVAR_VOICE_EVALUATOR_DIR", directory=True)
+    evaluator_main = evaluator / "main.py"
+    preflight = _preflight_report()["objective_evaluation"]
+    audio_results = output / "audio-probe-results.json"
+    audio_observations = output / "objective-with-audio-probes.json"
+    _run([
+        sys.executable, str(evaluator_main), "build-audio-probe-results",
+        str(runtime_observations), "--audio-base-dir", str(output),
+        "--extractor-revision", preflight["evaluator_revision"],
+        "--output", str(audio_results),
+    ])
+    _run([
+        sys.executable, str(evaluator_main), "apply-extractor-results",
+        str(runtime_observations), str(audio_results), "--audio-base-dir", str(output),
+        "--output", str(audio_observations),
+    ])
+    current_observations = audio_observations
+    if "asr" in preflight:
+        asr = preflight["asr"]
+        asr_results = output / "faster-whisper-results.json"
+        asr_observations = output / "objective-with-audio-asr.json"
+        _run([
+            asr["python"], str(evaluator_main), "build-faster-whisper-results",
+            str(current_observations), "--audio-base-dir", str(output),
+            "--model-dir", asr["model_dir"], "--model-name", asr["model_name"],
+            "--model-revision", asr["model_revision"], "--device", asr["device"],
+            "--compute-type", asr["compute_type"], "--language", "en",
+            "--beam-size", "5", "--output", str(asr_results),
+        ])
+        _run([
+            asr["python"], str(evaluator_main), "apply-extractor-results",
+            str(current_observations), str(asr_results), "--audio-base-dir", str(output),
+            "--faster-whisper-model-dir", asr["model_dir"],
+            "--output", str(asr_observations),
+        ])
+        current_observations = asr_observations
+    if "speaker" in preflight:
+        speaker = preflight["speaker"]
+        speaker_results = output / "speechbrain-ecapa-results.json"
+        speaker_observations = output / "objective-observations.json"
+        reference = (
+            f"{speaker['reference_id']}={_path('REFERENCE_AUDIO')}="
+            f"{speaker['reference_transcript']}"
+        )
+        shutil.copyfile(speaker["catalog"], output / "speaker-reference-catalog.json")
+        shutil.copyfile(speaker["reference_plan"], output / "speaker-reference-plan.json")
+        _run([
+            speaker["python"], str(evaluator_main), "build-speechbrain-ecapa-results",
+            str(current_observations), "--audio-base-dir", str(output),
+            "--model-dir", speaker["model_dir"],
+            "--model-revision", speaker["model_revision"],
+            "--catalog-id", speaker["catalog_id"],
+            "--speaker-reference", reference,
+            "--speaker-reference-plan", speaker["reference_plan"],
+            "--generation-plan", str(plan), "--device", speaker["device"],
+            "--trust-model-checkpoints", "--output", str(speaker_results),
+        ])
+        _run([
+            speaker["python"], str(evaluator_main), "apply-extractor-results",
+            str(current_observations), str(speaker_results),
+            "--audio-base-dir", str(output),
+            "--speechbrain-ecapa-model-dir", speaker["model_dir"],
+            "--speaker-reference", reference,
+            "--speaker-reference-plan", speaker["reference_plan"],
+            "--generation-plan", str(plan), "--output", str(speaker_observations),
+        ])
+        current_observations = speaker_observations
+    if current_observations.name != "objective-observations.json":
+        shutil.copyfile(current_observations, output / "objective-observations.json")
+    score_path = output / "objective-score.json"
+    _run([
+        sys.executable, str(evaluator_main), "score-objective",
+        str(output / "objective-observations.json"),
+        "--generation-plan", str(plan), "--output", str(score_path),
+    ])
+    score = json.loads(score_path.read_text(encoding="utf-8"))
+    plan_document = json.loads(plan.read_text(encoding="utf-8"))
+    _assert_objective_coverage(score, plan_document, os.environ["CANDIDATE_ID"])
     _archive(output, work / "evaluate" / "evaluation-bundle.tar", arcname="evaluation")
 
 
 def _package() -> None:
     work = _work()
+    _verify_locked_inputs(verify_base_model=False)
     preflight = json.loads((work / "preflight" / "preflight.json").read_text(encoding="utf-8"))
     staging = work / "package" / "staging"
     staging.mkdir(parents=True, exist_ok=False)

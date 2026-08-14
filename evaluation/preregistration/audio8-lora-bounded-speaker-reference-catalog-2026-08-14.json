@@ -1,0 +1,17 @@
+{
+  "catalog_id": "audio8-female01-reference-20260814",
+  "catalog_sha256": "4838c3de1453c3bce73ea5bd0c1d84c290fe37b2097dfa44ad718058c654d6ff",
+  "references": [
+    {
+      "audio": {
+        "bytes": 401964,
+        "sha256": "2dc2a3d83dab1e5569d1adac7828c907acc78271cb495d80228b15ca6e460237"
+      },
+      "reference_id": "female01",
+      "transcript": {
+        "bytes": 106,
+        "sha256": "7b5f531abde272946e3638bbd35736923e1b3562779deff69aed968bf471ba1e"
+      }
+    }
+  ]
+}

@@ -29,6 +29,10 @@ class LifecycleBackendTests(unittest.TestCase):
         self.assertEqual(spec["capability_binding"]["runtime_ids"], ["pytorch_cuda", "pytorch_mps"])
         required = {item["name"] for item in spec["required_environment"]}
         self.assertIn("PERSISTED_PACKAGE_ROOT", required)
+        self.assertIn("INSTAVAR_VOICE_EVALUATOR_DIR", required)
+        self.assertIn("FASTER_WHISPER_MODEL_DIR", required)
+        self.assertIn("SPEECHBRAIN_MODEL_DIR", required)
+        self.assertIn("SPEAKER_REFERENCE_PLAN", required)
         self.assertIn("package/persisted-package.json", spec["expected_artifacts"]["package"])
         for stage in ("preflight", "train", "infer", "evaluate", "package"):
             self.assertEqual(spec["commands"][stage][-1], stage)
@@ -147,6 +151,52 @@ class LifecycleBackendTests(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, "prepared_validation"),
             ):
                 LIFECYCLE._verify_dataset_lineage()
+
+    def test_required_objective_coverage_fails_closed(self) -> None:
+        plan = {
+            "required_objective_metrics": [
+                "asr_word_error_rate",
+                "speaker_embedding_similarity",
+                "duration_seconds",
+                "invalid_output_rate",
+            ],
+            "samples": [
+                {"candidate_id": "candidate"},
+                {"candidate_id": "candidate"},
+            ],
+        }
+        complete = {
+            "candidates": [
+                {
+                    "candidate_id": "candidate",
+                    "sample_count": 2,
+                    "invalid_output_rate": 0.0,
+                    "metric_coverage": {
+                        "asr_word_error_rate": {"observed": 2, "rate": 1.0},
+                        "speaker_embedding_similarity": {"observed": 2, "rate": 1.0},
+                        "audio_duration_seconds": {"observed": 2, "rate": 1.0},
+                    },
+                }
+            ]
+        }
+        LIFECYCLE._assert_objective_coverage(complete, plan, "candidate")
+        incomplete = json.loads(json.dumps(complete))
+        incomplete["candidates"][0]["metric_coverage"]["asr_word_error_rate"] = {
+            "observed": 1,
+            "rate": 0.5,
+        }
+        with self.assertRaisesRegex(ValueError, "asr_word_error_rate"):
+            LIFECYCLE._assert_objective_coverage(incomplete, plan, "candidate")
+
+    def test_required_objective_metrics_reject_unknown_and_duplicates(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            LIFECYCLE._required_objective_metrics(
+                {"required_objective_metrics": ["unknown_metric"]}
+            )
+        with self.assertRaisesRegex(ValueError, "unique"):
+            LIFECYCLE._required_objective_metrics(
+                {"required_objective_metrics": ["invalid_output_rate", "invalid_output_rate"]}
+            )
 
     def test_extract_rejects_empty_and_special_archives(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -332,9 +382,10 @@ class LifecycleBackendTests(unittest.TestCase):
             train.write_text("{}\n")
             validation.write_text("{}\n")
 
-            def fake_run(command, *, environment=None, capture=False):
+            def fake_run(command, *, environment=None, capture=False, cwd=ROOT):
                 self.assertEqual(command, ["bash", "audio8_tts_lora.sh"])
                 self.assertFalse(capture)
+                self.assertEqual(cwd, ROOT)
                 self.assertEqual(environment["EXPORT_DIR"], "")
                 output = Path(environment["OUTPUT_DIR"])
                 self.assertTrue(output.is_relative_to(work))
@@ -359,7 +410,7 @@ class LifecycleBackendTests(unittest.TestCase):
                 patch.object(LIFECYCLE, "_run", side_effect=fake_run),
                 patch.object(
                     LIFECYCLE,
-                    "_verify_dataset_lineage",
+                    "_verify_locked_inputs",
                     return_value={"status": "passed"},
                 ),
             ):
