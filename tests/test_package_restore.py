@@ -45,6 +45,28 @@ class PackageRestoreTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsafe archive member"):
                 RESTORE._safe_extract(unsafe, root / "unsafe-output", prefix="package")
 
+    def test_selected_row_failure_lists_available_candidate_prompt_pairs(self) -> None:
+        plan = {
+            "samples": [
+                {
+                    "candidate_id": "candidate-a",
+                    "prompt_id": "neutral",
+                    "seed": 42,
+                },
+                {
+                    "candidate_id": "candidate-a",
+                    "prompt_id": "names-numbers",
+                    "seed": 42,
+                },
+            ]
+        }
+        with self.assertRaisesRegex(
+            ValueError,
+            "available candidate/prompt pairs: candidate-a/names-numbers, "
+            "candidate-a/neutral",
+        ):
+            RESTORE._select_row(plan, "wrong-candidate", "neutral")
+
     def test_package_manifest_rejects_unlisted_files_and_byte_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -173,7 +173,7 @@ python scripts/verify_package_restore.py \
   --reference-audio /path/to/reference.wav \
   --reference-transcript /path/to/reference.txt \
   --reference-id target-speaker \
-  --candidate-id audio8-selected-adapter \
+  --candidate-id audio8-lora-bounded-step1 \
   --prompt-id neutral-brief \
   --output-dir /new/restore-directory \
   --device cuda \

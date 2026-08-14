@@ -124,13 +124,26 @@ def _verify_reference_inputs(
 
 
 def _select_row(plan: dict[str, Any], candidate_id: str, prompt_id: str) -> dict[str, Any]:
+    samples = plan.get("samples", [])
     rows = [
         row
-        for row in plan.get("samples", [])
+        for row in samples
         if row.get("candidate_id") == candidate_id and row.get("prompt_id") == prompt_id
     ]
     if len(rows) != 1:
-        raise ValueError("generation plan must contain one selected restore row")
+        available = sorted(
+            {
+                (str(row.get("candidate_id")), str(row.get("prompt_id")))
+                for row in samples
+                if row.get("candidate_id") and row.get("prompt_id")
+            }
+        )
+        choices = ", ".join(f"{candidate}/{prompt}" for candidate, prompt in available)
+        raise ValueError(
+            "generation plan must contain one selected restore row for "
+            f"{candidate_id}/{prompt_id}; available candidate/prompt pairs: "
+            f"{choices or 'none'}"
+        )
     return rows[0]
 
 
