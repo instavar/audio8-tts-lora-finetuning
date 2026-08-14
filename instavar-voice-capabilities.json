@@ -3,7 +3,7 @@
   "repository": {
     "slug": "instavar/audio8-tts-lora-finetuning",
     "url": "https://github.com/instavar/audio8-tts-lora-finetuning",
-    "evidence_revision": "622c781bebf9d6b21ea676afba2553d420fd74dd"
+    "evidence_revision": "3b9630fe474c3756ad46a4f4720b531d6277125f"
   },
   "model": {
     "family": "Audio8 TTS",
@@ -123,9 +123,14 @@
               "level": "validated",
               "ref": "reports/cuda-bounded-lifecycle-2026-08-14.md",
               "claim": "One 21,514,240-byte package was retained and restored twice; both restores reproduced the frozen neutral WAV byte-for-byte, and a wrong expected package digest failed before output creation."
+            },
+            {
+              "level": "validated",
+              "ref": "reports/mps-package-restore-2026-08-14.md",
+              "claim": "The exact CUDA package and 49-file base-model identity restored twice on a second host through MPS; both MPS WAV files were byte-identical."
             }
           ],
-          "boundary": "Two same-host restores do not prove independent backup, clean-host portability, disaster recovery, access control, or distribution rights."
+          "boundary": "CUDA same-host and Mac second-host restores do not prove independent backup, clean-host portability, disaster recovery, access control, or distribution rights."
         }
       }
     },
@@ -183,18 +188,23 @@
       "precision": "float32",
       "batching": false,
       "conformance": {
-        "status": "smoke_tested",
+        "status": "validated",
         "clean_checkout": true,
         "fresh_process": true,
         "prompt_count": 1,
         "seed_count": 1,
-        "report": "reports/macos-mps-smoke-test.md"
+        "report": "reports/mps-package-restore-2026-08-14.md"
       },
       "evidence": [
         {
           "level": "smoke_tested",
           "ref": "reports/macos-mps-smoke-test.md",
           "claim": "A bounded MPS LoRA step saved, reloaded, and generated a finite held-out WAV."
+        },
+        {
+          "level": "validated",
+          "ref": "reports/mps-package-restore-2026-08-14.md",
+          "claim": "The exact CUDA package restored twice in fresh MPS processes with byte-identical MPS output and bound one-row ASR and ECAPA diagnostics."
         }
       ]
     },
@@ -296,7 +306,8 @@
   "known_gaps": [
     "A one-step MPS preflight does not establish training quality or long-session stability.",
     "The validated CUDA slice has only two prompts, one seed, and one one-step adapter, with no matched Base candidate.",
-    "The retained package has two same-host restores but no independent backup or clean-host restore.",
+    "The retained package has CUDA same-host restores and Mac second-host restores but no independent backup or clean-host restore.",
+    "The exact MPS package probe covers one prompt and one seed; its output differs from CUDA and does not establish runtime equivalence.",
     "Guarded checkpoint resume has dependency-free contract coverage but no real interrupted GPU or MPS continuation comparison.",
     "Distributed and multi-worker guarded continuation are rejected because rank-local state is not represented.",
     "Adapter-aware ONNX and SGLang exports have not passed conformance.",

@@ -189,6 +189,13 @@ disaster recovery, or distribution rights. Treat the receipt as a handoff
 record and move the package into managed storage under a separate reviewed
 policy when long-term retention is required.
 
+The [2026-08-14 exact-package MPS report](reports/mps-package-restore-2026-08-14.md)
+reuses the CUDA package, complete base-model tree identity, reference inputs,
+candidate, prompt, and seed on a 16 GB M2 Pro. Two fresh MPS restores produced
+the same WAV byte-for-byte. The MPS WAV differs from CUDA in duration and level
+diagnostics, so this validates package portability and tested-MPS repeatability,
+not cross-runtime output equivalence.
+
 ## Promotion gate
 
 ### Frozen multi-prompt adapter evaluation
