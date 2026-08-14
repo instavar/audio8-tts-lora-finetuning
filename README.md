@@ -97,6 +97,27 @@ filesystem device, and directory inode. The checkpoint manifest covers model or
 adapter weights, optimizer, scheduler, Trainer state, RNG state, optional scaler,
 and sharded model files.
 
+For LoRA checkpoints, those files already expose the five independent semantic
+roles required by Instavar Voice evaluator 0.45:
+
+| Evaluator role | Audio8 checkpoint member |
+| --- | --- |
+| `model_state` | `adapter_model.safetensors` or `adapter_model.bin` |
+| `optimizer_state` | `optimizer.pt` |
+| `scheduler_state` | `scheduler.pt` |
+| `trainer_state` | `trainer_state.json` |
+| `rng_state` | the single `rng_state*.pth` member |
+
+`evaluator_lora_artifact_paths(...)` resolves this mapping and fails closed on
+ambiguous model or RNG files and cross-role hardlinks. It is a role-mapping
+helper, not a replacement for guarded sidecar validation or evaluator hashing.
+
+This is instrumentation readiness, not resume equivalence. A fresh comparison
+must bind live Base, dataset-lineage, training-controls, and initial-state
+artifacts into schema 1.1 receipts before outcome inspection. Existing CUDA and
+MPS runs predate that receipt contract and are not upgraded. See
+[`reports/resume-evaluator-045-readiness-2026-08-14.md`](reports/resume-evaluator-045-readiness-2026-08-14.md).
+
 The output directory is protected by a nonblocking advisory lock. Checkpoint
 sidecars are published only after Trainer closes and hashes all continuation
 files. Trainer's numeric retention is disabled and replaced with direct-child,
@@ -518,7 +539,7 @@ Fish S2 Pro.
 
 ## Instavar Voice conformance
 
-[`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) distinguishes the validated PyTorch adapter paths from upstream ONNX and SGLang surfaces whose adapter-aware exports remain unverified. It also records the frozen objective and blinded-listening gates required before promotion. CI validates the manifest against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation). New lifecycle runs should use evaluator commit `8c0fb66a592c73f801a289aabd242e03a6849115` or a deliberately reviewed successor so POSIX stage timeouts clean the complete process group. This does not retroactively upgrade earlier run evidence.
+[`instavar-voice-capabilities.json`](instavar-voice-capabilities.json) distinguishes the validated PyTorch adapter paths from upstream ONNX and SGLang surfaces whose adapter-aware exports remain unverified. It also records the frozen objective and blinded-listening gates required before promotion. CI validates the manifest against the pinned public [Instavar Voice evaluation contract](https://github.com/instavar/instavar-voice-evaluation). New lifecycle and resume-evidence runs should use evaluator commit `29c38cfd86b889abc8b79df063c817dd8f684903` or a deliberately reviewed successor so POSIX stage timeouts clean the complete process group and schema 1.1 receipts bind live conditioning artifacts. This does not retroactively upgrade earlier run evidence.
 
 The lifecycle fixes evaluation batch size at one so timing belongs to one
 sample, preserves invalid generations as explicit rows, and uses evaluator

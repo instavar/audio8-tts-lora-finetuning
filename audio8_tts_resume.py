@@ -268,6 +268,46 @@ def _require_continuation_files(manifest: list[dict[str, Any]]) -> None:
         raise ResumeContractError("Checkpoint omits adapter or model weights")
 
 
+def evaluator_lora_artifact_paths(checkpoint_dir: str | Path) -> dict[str, Path]:
+    """Return one independent checkpoint member for each evaluator 0.45 role."""
+    checkpoint = _resolved_without_symlink(checkpoint_dir, expected="directory")
+    manifest = checkpoint_manifest(checkpoint)
+    _require_continuation_files(manifest)
+    names = {item["path"] for item in manifest}
+
+    model_candidates = sorted(
+        name
+        for name in names
+        if name in {"adapter_model.safetensors", "adapter_model.bin"}
+    )
+    rng_candidates = sorted(
+        name
+        for name in names
+        if Path(name).name.startswith("rng_state") and name.endswith(".pth")
+    )
+    if len(model_candidates) != 1:
+        raise ResumeContractError(
+            "Evaluator LoRA mapping needs exactly one adapter model state file"
+        )
+    if len(rng_candidates) != 1:
+        raise ResumeContractError(
+            "Evaluator LoRA mapping needs exactly one RNG state file"
+        )
+
+    relative_by_role = {
+        "model_state": model_candidates[0],
+        "optimizer_state": "optimizer.pt",
+        "scheduler_state": "scheduler.pt",
+        "trainer_state": "trainer_state.json",
+        "rng_state": rng_candidates[0],
+    }
+    resolved = {role: checkpoint / relative for role, relative in relative_by_role.items()}
+    identities = [(path.stat().st_dev, path.stat().st_ino) for path in resolved.values()]
+    if len(identities) != len(set(identities)):
+        raise ResumeContractError("Evaluator LoRA artifact roles must not share hardlinks")
+    return resolved
+
+
 def write_checkpoint_sidecar(
     checkpoint_dir: str | Path,
     *,

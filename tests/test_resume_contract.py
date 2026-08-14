@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,7 @@ from audio8_tts_resume import (
     assert_save_destination_absent,
     build_contract,
     checkpoint_manifest,
+    evaluator_lora_artifact_paths,
     model_identity,
     prune_owned_checkpoints,
     require_fresh_output,
@@ -90,6 +92,38 @@ class ResumeContractTests(unittest.TestCase):
             world_size=1,
         )
         self.assertEqual(resolved, checkpoint.resolve())
+
+    def test_evaluator_lora_artifact_roles_are_independent(self) -> None:
+        checkpoint = self._checkpoint(2)
+        artifacts = evaluator_lora_artifact_paths(checkpoint)
+        self.assertEqual(
+            {role: path.name for role, path in artifacts.items()},
+            {
+                "model_state": "adapter_model.safetensors",
+                "optimizer_state": "optimizer.pt",
+                "scheduler_state": "scheduler.pt",
+                "trainer_state": "trainer_state.json",
+                "rng_state": "rng_state.pth",
+            },
+        )
+
+    def test_evaluator_lora_mapping_rejects_ambiguous_model_or_rng_state(self) -> None:
+        model_checkpoint = self._checkpoint(2)
+        (model_checkpoint / "adapter_model.bin").write_bytes(b"second-model-state")
+        with self.assertRaisesRegex(ResumeContractError, "exactly one adapter"):
+            evaluator_lora_artifact_paths(model_checkpoint)
+
+        rng_checkpoint = self._checkpoint(3)
+        (rng_checkpoint / "rng_state_0.pth").write_bytes(b"second-rng-state")
+        with self.assertRaisesRegex(ResumeContractError, "exactly one RNG"):
+            evaluator_lora_artifact_paths(rng_checkpoint)
+
+    def test_evaluator_lora_mapping_rejects_cross_role_hardlinks(self) -> None:
+        checkpoint = self._checkpoint(2)
+        (checkpoint / "scheduler.pt").unlink()
+        os.link(checkpoint / "optimizer.pt", checkpoint / "scheduler.pt")
+        with self.assertRaisesRegex(ResumeContractError, "must not share hardlinks"):
+            evaluator_lora_artifact_paths(checkpoint)
 
     def test_resume_requires_explicit_trust(self) -> None:
         checkpoint = self._checkpoint(2)

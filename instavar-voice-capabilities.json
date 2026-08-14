@@ -64,6 +64,11 @@
               "level": "validated",
               "ref": "reports/cuda-bounded-lifecycle-2026-08-14.md",
               "claim": "The selected checkpoint was reduced to inference-only adapter files and archived with an exact SHA-256."
+            },
+            {
+              "level": "repository_declared",
+              "ref": "reports/resume-evaluator-045-readiness-2026-08-14.md",
+              "claim": "LoRA Trainer checkpoints expose independent model, optimizer, scheduler, trainer, and RNG state members required by evaluator 0.45."
             }
           ],
           "boundary": "The selected inference adapter is retained, but no real interrupted run validates numerical guarded-resume equivalence."
@@ -309,6 +314,7 @@
     "The retained package has CUDA same-host restores and Mac second-host restores but no independent backup or clean-host restore.",
     "The exact MPS package probe covers two prompts and one seed; both outputs differ from CUDA and do not establish runtime equivalence.",
     "Guarded checkpoint resume has dependency-free contract coverage but no real interrupted GPU or MPS continuation comparison.",
+    "Existing lifecycle runs predate evaluator 0.45 live-conditioning receipts; a fresh uninterrupted and interrupted-resumed pair is required for the stronger byte-exact claim tier.",
     "Distributed and multi-worker guarded continuation are rejected because rank-local state is not represented.",
     "Adapter-aware ONNX and SGLang exports have not passed conformance.",
     "No selected adapter has passed blinded long-form Singapore English listening."
