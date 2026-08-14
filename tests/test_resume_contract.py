@@ -18,6 +18,7 @@ from audio8_tts_resume import (
     model_identity,
     prune_owned_checkpoints,
     require_fresh_output,
+    require_safe_torch_resume_version,
     resolve_checkpoint,
     resolve_resume_request,
     validate_resume_checkpoint,
@@ -26,6 +27,13 @@ from audio8_tts_resume import (
 
 
 class ResumeContractTests(unittest.TestCase):
+    def test_guarded_resume_requires_torch_26_or_newer(self) -> None:
+        for value in ("2.6.0", "2.9.0+cu128", "3.0.0.dev20260814"):
+            require_safe_torch_resume_version(value)
+        for value in ("2.5.1", "1.13.1+cu117", "unknown"):
+            with self.assertRaises(ResumeContractError):
+                require_safe_torch_resume_version(value)
+
     def test_initial_adapter_tree_requires_one_safe_model_file(self) -> None:
         adapter = self.root / "initial-adapter"
         adapter.mkdir()

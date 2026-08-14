@@ -42,6 +42,8 @@ class LoRAContractTests(unittest.TestCase):
         self.assertIn("assert_save_destination_absent", source)
         self.assertIn("training_args.save_total_limit = None", source)
         self.assertIn("world_size=1 only", source)
+        self.assertIn('"logging_dir",', source)
+        self.assertIn("require_safe_torch_resume_version", source)
 
     def test_full_sft_guarded_resume_is_explicitly_opt_in(self) -> None:
         source = (ROOT / "audio8_tts_sft.sh").read_text(encoding="utf-8")

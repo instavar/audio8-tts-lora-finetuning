@@ -122,6 +122,12 @@ filesystem device, and directory inode. The checkpoint manifest covers model or
 adapter weights, optimizer, scheduler, Trainer state, RNG state, optional scaler,
 and sharded model files.
 
+Guarded training requires Torch 2.6 or newer. Current Transformers releases
+reject optimizer-state loading on older Torch versions after CVE-2025-32434,
+so creating a nominally resumable checkpoint under Torch 2.5 would be a
+dead-end contract. The timestamped default `logging_dir` is excluded because
+it is observational output and otherwise changes on every process start.
+
 For LoRA checkpoints, those files already expose the five independent semantic
 roles required by Instavar Voice evaluator 0.45:
 

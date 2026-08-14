@@ -51,6 +51,7 @@ from audio8_tts_resume import (
     initial_adapter_contract_files,
     prune_owned_checkpoints,
     require_fresh_output,
+    require_safe_torch_resume_version,
     resolve_resume_request,
     validate_resume_checkpoint,
     write_checkpoint_sidecar,
@@ -413,7 +414,13 @@ def _training_contract_config(
     training_args: Audio8TTSTrainingArguments,
 ) -> dict[str, Any]:
     training = asdict(training_args)
-    for name in ("resume_from", "resume_mode", "trust_resume_state", "guarded_checkpoints"):
+    for name in (
+        "resume_from",
+        "resume_mode",
+        "trust_resume_state",
+        "guarded_checkpoints",
+        "logging_dir",
+    ):
         training.pop(name, None)
     return {
         "model": asdict(model_args),
@@ -516,6 +523,7 @@ def main() -> None:
     guarded_resume_request: str | None = None
     output_lock_handle = None
     if guarded:
+        require_safe_torch_resume_version(str(torch.__version__))
         if bool(getattr(training_args, "save_only_model", False)):
             raise ResumeContractError(
                 "Guarded checkpoints require optimizer, scheduler, and RNG state; "

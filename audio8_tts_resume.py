@@ -18,10 +18,23 @@ SIDECAR_NAME = "instavar-resume-contract.json"
 LOCK_NAME = ".instavar-training.lock"
 _CHECKPOINT_RE = re.compile(r"^checkpoint-(\d+)$")
 _IMMUTABLE_REVISION_RE = re.compile(r"^[0-9a-fA-F]{40,64}$")
+_VERSION_PREFIX_RE = re.compile(r"^(\d+)\.(\d+)")
 
 
 class ResumeContractError(ValueError):
     """Raised when continuation state is unsafe or does not match the current run."""
+
+
+def require_safe_torch_resume_version(value: str) -> None:
+    match = _VERSION_PREFIX_RE.match(str(value))
+    if match is None:
+        raise ResumeContractError("Could not parse the Torch version for guarded resume")
+    version = (int(match.group(1)), int(match.group(2)))
+    if version < (2, 6):
+        raise ResumeContractError(
+            "Guarded resume requires Torch 2.6 or newer because current Transformers "
+            "rejects optimizer-state loading on older Torch releases after CVE-2025-32434"
+        )
 
 
 def canonical_json(value: Any) -> str:
