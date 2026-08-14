@@ -234,6 +234,27 @@ class LifecycleBackendTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsafe adapter archive member"):
                 LIFECYCLE._extract(traversal, root / "traversal-output")
 
+    def test_extract_uses_python310_compatible_validated_members(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive_path = root / "adapter.tar"
+            with tarfile.open(archive_path, "w") as archive:
+                member = tarfile.TarInfo("adapter/adapter_config.json")
+                member.size = 2
+                archive.addfile(member, io.BytesIO(b"{}"))
+            destination = root / "output"
+            original_extractall = tarfile.TarFile.extractall
+            with patch.object(
+                tarfile.TarFile,
+                "extractall",
+                autospec=True,
+                side_effect=lambda archive, path, members: original_extractall(
+                    archive, path, members
+                ),
+            ) as extractall:
+                LIFECYCLE._extract(archive_path, destination)
+            self.assertNotIn("filter", extractall.call_args.kwargs)
+
     def test_persist_package_is_content_addressed_and_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

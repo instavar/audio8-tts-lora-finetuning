@@ -433,7 +433,7 @@ def _extract(source: Path, destination: Path) -> Path:
                 or not (member.isfile() or member.isdir())
             ):
                 raise ValueError(f"unsafe adapter archive member: {member.name}")
-        archive.extractall(destination, members=members, filter="data")
+        archive.extractall(destination, members=members)
     adapter = destination / "adapter"
     if not adapter.is_dir() or not any(path.is_file() for path in adapter.rglob("*")):
         raise ValueError("adapter archive did not contain a non-empty adapter root")
